@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LK Pneus - Gestão de Pneus</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        @media print {
+            body * { visibility: hidden; }
+            #print-section, #print-section * { visibility: visible; }
+            #print-section { position: absolute; left: 0; top: 0; width: 100%; }
+        }
+
+        @keyframes rollTire {
+            0% {
+                left: -30px;
+                transform: rotate(0deg) scale(0.8);
+                opacity: 0;
+            }
+            20% {
+                opacity: 1;
+            }
+            80% {
+                opacity: 1;
+            }
+            100% {
+                left: 100%;
+                transform: rotate(720deg) scale(0.8);
+                opacity: 0;
+            }
+        }
+
+        .rolling-tire {
+            position: absolute;
+            top: 50%;
+            margin-top: -12px;
+            font-size: 20px;
+            color: #10b981;
+            pointer-events: none;
+            animation: rollTire 0.85s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+            z-index: 20;
+        }
+
+        .nav-item {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .map-axle-row { display:grid; grid-template-columns:minmax(0,1fr) 116px minmax(0,1fr); gap:12px; align-items:center; }
+        .map-axle-side { display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap; }
+        .map-wheel { min-width:62px; border:1px solid #cbd5e1; border-radius:10px; padding:8px 6px; background:#fff; text-align:center; transition:.15s; }
+        .map-wheel:hover { border-color:#10b981; background:#ecfdf5; transform:translateY(-1px); }
+        .map-wheel .wheel-icon { display:block; font-size:20px; color:#475569; margin-bottom:3px; }
+        .map-wheel.is-good { border-color:#86efac; background:#f0fdf4; }
+        .map-wheel.is-alert { border-color:#fcd34d; background:#fffbeb; }
+        .map-wheel.is-critical { border-color:#fca5a5; background:#fef2f2; }
+        .map-wheel.is-empty { border-style:dashed; color:#94a3b8; }
+        .map-chassis { background:#0f172a; color:#e2e8f0; border-radius:14px; min-height:74px; padding:9px 6px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+        .axle-editor-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(120px, .8fr) 90px 34px; gap:8px; align-items:end; }
+        .os-tire-card { border:1px solid #e2e8f0; border-radius:10px; padding:9px 10px; background:#fff; }
+        .os-tire-card input[type=checkbox] { accent-color:#059669; }
+        .soft-label { display:block; font-size:11px; font-weight:600; text-transform:uppercase; color:#64748b; margin-bottom:5px; }
+        .field-control { width:100%; border:1px solid #cbd5e1; border-radius:8px; background:#fff; padding:8px 10px; font-size:13px; color:#1e293b; }
+        .field-control:focus { outline:2px solid #a7f3d0; border-color:#10b981; }
+        @media (max-width: 700px) { .map-axle-row { grid-template-columns:1fr; gap:5px; } .map-chassis { min-height:44px; flex-direction:row; gap:8px; } .axle-editor-row { grid-template-columns:1fr 1fr; } }
+
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased font-sans min-h-screen flex flex-col">
+
+    <div id="app-content" class="flex h-screen overflow-hidden">
+        <!-- Sidebar Navigation -->
+        <aside class="w-64 bg-slate-900 text-slate-100 flex flex-col shrink-0 border-r border-slate-800">
+            <div class="p-5 border-b border-slate-800 flex items-center justify-between">
+                <div>
+                    <h1 class="font-bold text-lg leading-tight tracking-wider text-emerald-400">LK Pneus</h1>
+                    <p class="text-xs text-slate-400 font-medium">GESTÃO DE PNEUS</p>
+                </div>
+                <div class="text-right">
+                    <span id="logged-user-badge" class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-800">
+                        <i class="fa-solid fa-user-check text-[9px]"></i> Admin
+                    </span>
+                </div>
+            </div>
+
+            <nav class="flex-1 p-4 space-y-1 overflow-y-auto">
+                <button onclick="switchTab('dashboard', this)" id="nav-dashboard" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-300 hover:bg-slate-800 hover:text-white">
+                    <i class="fa-solid fa-chart-line w-5 text-center text-emerald-400"></i> Dashboard
+                </button>
+                <button onclick="switchTab('pneus', this)" id="nav-pneus" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-300 hover:bg-slate-800 hover:text-white">
+                    <i class="fa-solid fa-circle-dot w-5 text-center text-emerald-400"></i> Estq. / Pneus
+                </button>
+                <button onclick="switchTab('cadastros', this)" id="nav-cadastros" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-300 hover:bg-slate-800 hover:text-white">
+                    <i class="fa-solid fa-address-book w-5 text-center text-emerald-400"></i> Cadastros
+                </button>
+                <button onclick="switchTab('ordens', this)" id="nav-ordens" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-300 hover:bg-slate-800 hover:text-white">
+                    <i class="fa-solid fa-file-invoice-dollar w-5 text-center text-emerald-400"></i> Ordens de Serviço
+                </button>
+                <button onclick="switchTab('usuarios', this)" id="nav-usuarios" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-300 hover:bg-slate-800 hover:text-white">
+                    <i class="fa-solid fa-users-gear w-5 text-center text-emerald-400"></i> Usuários
+                </button>
+                <button onclick="switchTab('auditoria', this)" id="nav-auditoria" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-300 hover:bg-slate-800 hover:text-white">
+                    <i class="fa-solid fa-shield-halved w-5 text-center text-emerald-400"></i> Trilha de Auditoria
+                </button>
+                <button onclick="switchTab('ajuda', this)" id="nav-ajuda" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-300 hover:bg-slate-800 hover:text-white">
+                    <i class="fa-solid fa-circle-question w-5 text-center text-emerald-400"></i> Ajuda & Dicas
+                </button>
+            </nav>
+
+            <div class="p-4 border-t border-slate-800 flex justify-between items-center text-xs text-slate-500">
+                <span>LK Pneus &copy; 2026</span>
+                <span class="text-emerald-500 font-mono">v2.6</span>
+            </div>
+        </aside>
+
+        <main class="flex-1 overflow-y-auto p-6 bg-slate-50">
+            <div id="storage-warning" class="hidden mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950" role="status">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div class="flex items-start gap-3"><i class="fa-solid fa-triangle-exclamation mt-1 text-amber-600"></i><div><p id="storage-warning-title" class="font-bold text-sm">Armazenamento local limitado</p><p id="storage-warning-message" class="text-xs mt-1">O navegador está bloqueando o armazenamento normal.</p></div></div>
+                    <div class="flex flex-wrap gap-2 shrink-0"><button type="button" onclick="exportStateBackup()" class="rounded-lg bg-amber-700 hover:bg-amber-800 px-3 py-2 text-xs font-semibold text-white"><i class="fa-solid fa-download mr-1"></i>Baixar backup</button><button type="button" onclick="document.getElementById('state-backup-file').click()" class="rounded-lg border border-amber-400 bg-white hover:bg-amber-100 px-3 py-2 text-xs font-semibold"><i class="fa-solid fa-upload mr-1"></i>Restaurar backup</button><input id="state-backup-file" type="file" accept="application/json,.json" class="hidden" onchange="importStateBackup(event)"></div>
+                </div>
+            </div>
+
+            <!-- TAB: DASHBOARD -->
+            <div id="tab-dashboard" class="tab-content space-y-6">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold text-slate-800">Painel Geral</h2>
+                        <p class="text-sm text-slate-500">Acompanhamento e saúde dos pneus em operação.</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <span class="text-xs font-semibold uppercase text-slate-400">Total na Frota</span>
+                        <div class="text-3xl font-extrabold text-slate-800 mt-2" id="metric-total">0</div>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <span class="text-xs font-semibold uppercase text-emerald-600">Em Uso</span>
+                        <div class="text-3xl font-extrabold text-emerald-600 mt-2" id="metric-emuso">0</div>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <span class="text-xs font-semibold uppercase text-amber-600">Sulco Alerta (1.6 - 3mm)</span>
+                        <div class="text-3xl font-extrabold text-amber-600 mt-2" id="metric-alerta">0</div>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <span class="text-xs font-semibold uppercase text-red-600">Sulco Crítico (&lt; 1.6mm)</span>
+                        <div class="text-3xl font-extrabold text-red-600 mt-2" id="metric-critico">0</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <span class="text-xs font-semibold uppercase text-slate-400">Gastos registrados</span>
+                        <div id="metric-gastos" class="text-2xl font-extrabold text-slate-800 mt-2">R$ 0,00</div>
+                        <p class="text-xs text-slate-400 mt-1">Ordens de serviço salvas no navegador</p>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <span class="text-xs font-semibold uppercase text-slate-400">Ordens emitidas</span>
+                        <div id="metric-ordens" class="text-2xl font-extrabold text-slate-800 mt-2">0</div>
+                        <p class="text-xs text-slate-400 mt-1">Com detalhamento de pneus e movimentações</p>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <span class="text-xs font-semibold uppercase text-slate-400">Pneus em estoque</span>
+                        <div id="metric-estoque" class="text-2xl font-extrabold text-slate-800 mt-2">0</div>
+                        <p class="text-xs text-slate-400 mt-1">Disponíveis para montagem ou substituição</p>
+                    </div>
+                </div>
+                <div class="bg-white p-4 md:p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
+                    <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
+                        <div><h3 class="font-bold text-slate-800">Análise de custos da frota</h3><p class="text-xs text-slate-500">Filtre os registros e compare gastos por veículo, categoria e pneu.</p></div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 min-w-0 lg:min-w-[520px]">
+                            <div><label class="soft-label">Ano</label><select id="dashboard-filter-year" class="field-control" onchange="renderAnalyticsDashboard()"><option value="todos">Todos</option></select></div>
+                            <div><label class="soft-label">Categoria</label><select id="dashboard-filter-categoria" class="field-control" onchange="renderAnalyticsDashboard()"><option value="todos">Todas</option></select></div>
+                            <div><label class="soft-label">Veículo</label><select id="dashboard-filter-veiculo" class="field-control" onchange="renderAnalyticsDashboard()"><option value="todos">Todos</option></select></div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                        <div><label class="soft-label" for="dashboard-data-inicio">Data inicial</label><input type="date" id="dashboard-data-inicio" class="field-control" onchange="renderAnalyticsDashboard()"></div>
+                        <div><label class="soft-label" for="dashboard-data-fim">Data final</label><input type="date" id="dashboard-data-fim" class="field-control" onchange="renderAnalyticsDashboard()"></div>
+                        <p class="md:col-span-2 text-xs text-slate-500">Ao selecionar o período, os indicadores e gráficos são filtrados e o histórico abaixo mostra os registros com data dentro do intervalo.</p>
+                    </div>
+                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                        <div class="border border-slate-100 rounded-lg p-3"><h4 class="text-sm font-semibold text-slate-700 mb-2">Gastos por mês</h4><div class="h-64"><canvas id="chart-custos-mes"></canvas></div></div>
+                        <div class="border border-slate-100 rounded-lg p-3"><h4 class="text-sm font-semibold text-slate-700 mb-2">Gastos por categoria de veículo</h4><div class="h-64"><canvas id="chart-custos-categoria"></canvas></div></div>
+                        <div class="border border-slate-100 rounded-lg p-3"><h4 class="text-sm font-semibold text-slate-700 mb-2">Veículos com maior gasto</h4><div class="h-64"><canvas id="chart-custos-veiculo"></canvas></div></div>
+                        <div class="border border-slate-100 rounded-lg p-3"><h4 class="text-sm font-semibold text-slate-700 mb-2">Gastos por modelo / ano do veículo</h4><div class="h-64"><canvas id="chart-custos-modelo"></canvas></div></div>
+                        <div class="border border-slate-100 rounded-lg p-3"><h4 class="text-sm font-semibold text-slate-700 mb-2">Custos por grupo de pneus (aquisição + OS)</h4><div class="h-64"><canvas id="chart-custos-grupo"></canvas></div></div>
+                    </div>
+                    <div class="border border-slate-100 rounded-lg p-3"><h4 class="text-sm font-semibold text-slate-700 mb-2">Pneus com maior custo (aquisição + OS vinculadas)</h4><div class="h-64"><canvas id="chart-custos-pneu"></canvas></div></div>
+                    <div class="border border-slate-100 rounded-lg p-3">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3"><h4 class="text-sm font-semibold text-slate-700">Tudo o que aconteceu no período</h4><span id="dashboard-atividade-contagem" class="text-xs text-slate-500">Todos os registros</span></div>
+                        <div id="dashboard-atividade" class="space-y-2"><p class="text-sm text-slate-400">Selecione as datas para consultar os registros.</p></div>
+                    </div>
+                    <div class="border border-slate-100 rounded-lg p-3 space-y-3">
+                        <div><h4 class="text-sm font-semibold text-slate-700">Pesquisa de cadastros</h4><p class="text-xs text-slate-500">Pesquise veículos, motoristas e fornecedores por seus dados cadastrados.</p></div>
+                        <input id="dashboard-busca-cadastros" type="search" class="field-control" placeholder="Buscar veículo, motorista ou fornecedor..." oninput="searchCostRegistrations()">
+                        <div id="dashboard-resultados-busca" class="space-y-2"><p class="text-sm text-slate-400">Digite marca, modelo, ano, prefixo, nome, CPF, telefone, CNPJ, produto ou serviço.</p></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: CADASTROS (VEICULOS, MOTORISTAS, FORNECEDORES) -->
+            <div id="tab-cadastros" class="tab-content hidden space-y-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-800">Cadastros Gerais</h2>
+                    <p class="text-sm text-slate-500">Gerencie veículos, motoristas e fornecedores em um único lugar.</p>
+                </div>
+
+                <div class="border-b border-slate-200 flex gap-4 text-sm font-medium">
+                    <button onclick="switchCadastroSubTab('veiculos')" id="subnav-veiculos" class="subnav-btn pb-3 border-b-2 border-emerald-500 text-emerald-600 font-semibold flex items-center gap-2">
+                        <i class="fa-solid fa-truck"></i> Veículos
+                    </button>
+                    <button onclick="switchCadastroSubTab('mapa')" id="subnav-mapa" class="subnav-btn pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center gap-2">
+                        <i class="fa-solid fa-circle-dot"></i> Mapa de Pneus
+                    </button>
+                    <button onclick="switchCadastroSubTab('motoristas')" id="subnav-motoristas" class="subnav-btn pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center gap-2">
+                        <i class="fa-solid fa-id-card"></i> Motoristas
+                    </button>
+                    <button onclick="switchCadastroSubTab('fornecedores')" id="subnav-fornecedores" class="subnav-btn pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center gap-2">
+                        <i class="fa-solid fa-building"></i> Fornecedores
+                    </button>
+                </div>
+
+                <!-- SUBTAB: VEÍCULOS -->
+                <div id="subtab-veiculos" class="subtab-content space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h3 class="font-semibold text-slate-700">Frota de Veículos</h3>
+                        <button onclick="openModal('modal-veiculo')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors flex items-center gap-2">
+                            <i class="fa-solid fa-plus"></i> Novo Veículo
+                        </button>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                        <table class="w-full text-left text-sm text-slate-600">
+                            <thead class="bg-slate-50 text-slate-700 uppercase text-xs font-semibold border-b border-slate-200">
+                                <tr>
+                                    <th class="p-3">Prefixo</th>
+                                    <th class="p-3">Placa</th>
+                                    <th class="p-3">Modelo / Ano</th>
+                                    <th class="p-3">Categoria / Configuração</th>
+                                    <th class="p-3">Chassi</th>
+                                    <th class="p-3">KM Atual</th>
+                                    <th class="p-3 text-right">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-veiculos" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- SUBTAB: MAPA INTERATIVO DA FROTA -->
+                <div id="subtab-mapa" class="subtab-content hidden space-y-4">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div><h3 class="font-semibold text-slate-800">Mapa interativo de pneus</h3><p class="text-xs text-slate-500">A quantidade e as posições são geradas pela configuração salva em cada veículo. Clique numa posição para montar, transferir ou remover um pneu.</p></div>
+                        <div class="w-full md:w-80"><label class="soft-label">Veículo da frota</label><select id="mapa-veiculo-select" class="field-control" onchange="renderVehicleMap()"><option value="">Cadastre ou selecione um veículo</option></select></div>
+                    </div>
+                    <div id="vehicle-map" class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-6 min-h-48"><div class="text-center py-12 text-slate-400"><i class="fa-solid fa-truck-fast text-3xl mb-3"></i><p>Selecione um veículo para visualizar o mapa.</p></div></div>
+                    <div class="flex flex-wrap gap-3 text-xs text-slate-600">
+                        <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 bg-emerald-500 rounded-full"></span> Sulco adequado</span>
+                        <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 bg-amber-400 rounded-full"></span> Atenção</span>
+                        <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 bg-red-500 rounded-full"></span> Crítico</span>
+                        <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 border border-dashed border-slate-400 rounded-full"></span> Posição livre</span>
+                    </div>
+                </div>
+
+                <!-- SUBTAB: MOTORISTAS -->
+                <div id="subtab-motoristas" class="subtab-content hidden space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h3 class="font-semibold text-slate-700">Motoristas Cadastrados</h3>
+                        <button onclick="openModal('modal-motorista')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors flex items-center gap-2">
+                            <i class="fa-solid fa-plus"></i> Novo Motorista
+                        </button>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                        <table class="w-full text-left text-sm text-slate-600">
+                            <thead class="bg-slate-50 text-slate-700 uppercase text-xs font-semibold border-b border-slate-200">
+                                <tr>
+                                    <th class="p-3">Nome / Função</th>
+                                    <th class="p-3">CPF</th>
+                                    <th class="p-3">CNH</th>
+                                    <th class="p-3">Telefone</th>
+                                    <th class="p-3 text-right">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-motoristas" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- SUBTAB: FORNECEDORES -->
+                <div id="subtab-fornecedores" class="subtab-content hidden space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h3 class="font-semibold text-slate-700">Fornecedores e Serviços</h3>
+                        <button onclick="openModal('modal-fornecedor')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors flex items-center gap-2">
+                            <i class="fa-solid fa-plus"></i> Novo Fornecedor
+                        </button>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                        <table class="w-full text-left text-sm text-slate-600">
+                            <thead class="bg-slate-50 text-slate-700 uppercase text-xs font-semibold border-b border-slate-200">
+                                <tr>
+                                    <th class="p-3">Razão Social / Nome</th>
+                                    <th class="p-3">CNPJ/CPF</th>
+                                    <th class="p-3">Tipo de Serviço</th>
+                                    <th class="p-3">Telefone</th>
+                                    <th class="p-3 text-right">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-fornecedores" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: PNEUS -->
+            <div id="tab-pneus" class="tab-content hidden space-y-6">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold text-slate-800">Estoque e Pneus da Frota</h2>
+                        <p class="text-sm text-slate-500">Controle individualizado por Nº de Fogo / Série.</p>
+                    </div>
+                    <button onclick="openModal('modal-pneu')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i> Novo Pneu
+                    </button>
+                </div>
+
+                <div class="space-y-3">
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div class="bg-white rounded-xl border border-slate-200 p-4"><div class="text-xs text-slate-500">Pneus encontrados</div><div id="estoque-metric-total" class="text-xl font-bold text-slate-800">0</div></div>
+                        <div class="bg-white rounded-xl border border-slate-200 p-4"><div class="text-xs text-slate-500">Valor total de aquisição</div><div id="estoque-metric-valor" class="text-xl font-bold text-slate-800">R$ 0,00</div></div>
+                        <div class="bg-white rounded-xl border border-slate-200 p-4"><div class="text-xs text-slate-500">Vida média estimada</div><div id="estoque-metric-vida" class="text-xl font-bold text-emerald-700">0%</div></div>
+                        <div class="bg-white rounded-xl border border-slate-200 p-4"><div class="text-xs text-slate-500">Gastos acumulados</div><div id="estoque-metric-gastos" class="text-xl font-bold text-amber-700">R$ 0,00</div></div>
+                    </div>
+                    <div class="bg-white rounded-xl border border-slate-200 p-3">
+                        <label for="estoque-pneus-busca" class="soft-label">Busca rápida no estoque de pneus</label>
+                        <div class="relative"><i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400"></i><input id="estoque-pneus-busca" type="search" oninput="renderPneus()" placeholder="Buscar por Nº de fogo, marca, modelo, DOT ou tamanho..." class="field-control pl-9 w-full"></div>
+                        <p class="text-xs text-slate-400 mt-2">Os indicadores e a tabela abaixo consideram os pneus encontrados na busca.</p>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-600">
+                        <thead class="bg-slate-50 text-slate-700 uppercase text-xs font-semibold border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">Nº Fogo / Vida</th>
+                                <th class="p-3">Marca / Medida</th>
+                                <th class="p-3">Veículo / Posição</th>
+                                <th class="p-3">Sulco (mm)</th>
+                                <th class="p-3">Status</th>
+                                <th class="p-3 text-right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-pneus" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB: ORDENS DE SERVIÇO -->
+            <div id="tab-ordens" class="tab-content hidden space-y-6">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold text-slate-800">Ordens de Serviço (OS)</h2>
+                        <p class="text-sm text-slate-500">Histórico e emissão de manutenções de pneus.</p>
+                    </div>
+                    <button onclick="openModal('modal-ordem')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i> Nova Ordem de Serviço
+                    </button>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-600">
+                        <thead class="bg-slate-50 text-slate-700 uppercase text-xs font-semibold border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">Nº OS</th>
+                                <th class="p-3">Data</th>
+                                <th class="p-3">Veículo</th>
+                                <th class="p-3">Fornecedor</th>
+                                <th class="p-3">Tipo de Serviço</th>
+                                <th class="p-3">Valor (R$)</th>
+                                <th class="p-3 text-right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-ordens" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB: USUÁRIOS -->
+            <div id="tab-usuarios" class="tab-content hidden space-y-6">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold text-slate-800">Gestão de Usuários</h2>
+                        <p class="text-sm text-slate-500">Controle quem pode acessar e operar o sistema.</p>
+                    </div>
+                    <button onclick="openModal('modal-usuario')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors flex items-center gap-2">
+                        <i class="fa-solid fa-user-plus"></i> Novo Usuário
+                    </button>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-600">
+                        <thead class="bg-slate-50 text-slate-700 uppercase text-xs font-semibold border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">Nome</th>
+                                <th class="p-3">E-mail / Usuário</th>
+                                <th class="p-3">Perfil de Acesso</th>
+                                <th class="p-3">Status</th>
+                                <th class="p-3 text-right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-usuarios" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB: TRILHA DE AUDITORIA -->
+            <div id="tab-auditoria" class="tab-content hidden space-y-6">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold text-slate-800">Trilha de Auditoria</h2>
+                        <p class="text-sm text-slate-500">Histórico completo de alterações, movimentações e quem as realizou.</p>
+                    </div>
+                    <button onclick="clearAuditLog()" class="text-xs text-red-600 hover:text-red-800 font-medium flex items-center gap-1 border border-red-200 bg-red-50 px-3 py-1.5 rounded-lg">
+                        <i class="fa-solid fa-eraser"></i> Limpar Histórico
+                    </button>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-600">
+                        <thead class="bg-slate-50 text-slate-700 uppercase text-xs font-semibold border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">Data / Hora</th>
+                                <th class="p-3">Usuário</th>
+                                <th class="p-3">Módulo</th>
+                                <th class="p-3">Ação</th>
+                                <th class="p-3">Detalhes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-auditoria" class="divide-y divide-slate-100 font-mono text-xs"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB: AJUDA & DICAS -->
+            <div id="tab-ajuda" class="tab-content hidden space-y-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-800">Ajuda e Instruções de Uso</h2>
+                    <p class="text-sm text-slate-500">Aprenda a utilizar o LK Pneus com facilidade.</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
+                    <h3 class="font-bold text-emerald-700 text-lg">Guia Rápido:</h3>
+                    <ol class="list-decimal list-inside space-y-2 text-sm text-slate-600">
+                        <li><strong>Cadastre o veículo</strong> e confira a quantidade de eixos, pneus por lado e estepe. O mapa deriva da configuração salva.</li>
+                        <li><strong>Cadastre os pneus</strong> pelo Nº de Fogo/Série, grupo e custo de aquisição. Os pneus podem ficar em estoque até serem montados pelo mapa.</li>
+                        <li><strong>Use o Mapa de Pneus</strong> em Cadastros para montar, retirar ou transferir pneus e acompanhar sulco por posição.</li>
+                        <li><strong>Ordens de Serviço</strong>: selecione veículo, motorista, oficina ou fornecedor, pneus envolvidos, custo e movimentação. O histórico é vinculado ao pneu.</li>
+                        <li><strong>Dashboards</strong>: filtre as OS por ano, categoria e veículo. Os gráficos dependem dos custos cadastrados nas ordens.</li>
+                        <li><strong>Dados desta versão</strong>: salvos no navegador atual. Convite real de usuário e sincronização entre computadores serão habilitados na integração Supabase.</li>
+                    </ol>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- MODAL PNEU -->
+    <div id="modal-pneu" class="fixed inset-0 bg-slate-900/50 hidden backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 class="font-bold text-slate-800">Cadastrar Novo Pneu</h3>
+                <button onclick="closeModal('modal-pneu')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="form-pneu" onsubmit="handleSavePneu(event)" class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Nº de Fogo / Série *</label>
+                        <input type="text" id="pneu-fogo" required placeholder="Ex: F-9842" class="w-full rounded-lg border-slate-300 border text-sm p-2 uppercase">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Medida *</label>
+                        <input type="text" id="pneu-medida" required placeholder="Ex: 295/80R22.5" class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Marca *</label>
+                        <input type="text" id="pneu-marca" required placeholder="Ex: Michelin" class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Modelo *</label>
+                        <input type="text" id="pneu-modelo" required placeholder="Ex: X Multi" class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Vida Útil *</label>
+                        <select id="pneu-vida" required class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                            <option value="Novo (1ª Vida)">Novo (1ª Vida)</option>
+                            <option value="Recapado (2ª Vida)">Recapado (2ª Vida)</option>
+                            <option value="Recapado (3ª Vida)">Recapado (3ª Vida)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Grupo / Aplicação *</label>
+                        <select id="pneu-grupo" required class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                            <option value="Direcional">Direcional</option><option value="Tração">Tração</option><option value="Livre / Implemento">Livre / Implemento</option><option value="Misto">Misto</option><option value="Fora de estrada">Fora de estrada</option><option value="Agrícola">Agrícola</option><option value="Industrial / Maciço">Industrial / Maciço</option><option value="Outro">Outro</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Custo de aquisição (R$) *</label>
+                        <input type="number" min="0" step="0.01" id="pneu-custo-aquisicao" required placeholder="0,00" class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Data de compra</label>
+                        <input type="date" id="pneu-data-compra" class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Fornecedor</label>
+                        <select id="pneu-fornecedor" class="w-full rounded-lg border-slate-300 border text-sm p-2"><option value="">Não informado</option></select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">DOT</label>
+                        <input type="text" id="pneu-dot" placeholder="Ex: 2426" class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Sulco inicial (mm)</label>
+                        <input type="number" step="0.1" id="pneu-sulco-inicial" min="0" max="30" placeholder="14.5" class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Veículo Alocado</label>
+                        <select id="pneu-veiculo" onchange="populatePneuPositionDropdown()" class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                            <option value="Estoque">Em Estoque (Sem Veículo)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Posição na Roda</label>
+                        <div class="flex gap-2"><input type="text" id="pneu-posicao-label" readonly value="Estoque" class="field-control flex-1" placeholder="Escolha no mapa"><button type="button" id="pneu-escolher-posicao" onclick="openTirePositionMap()" class="hidden shrink-0 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 text-xs font-semibold"><i class="fa-solid fa-map mr-1"></i>Escolher posição no mapa</button></div>
+                        <select id="pneu-posicao" class="hidden"><option value="Estoque">Estoque</option></select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Profundidade do Sulco (mm) *</label>
+                        <input type="number" step="0.1" id="pneu-sulco" required min="0" max="30" placeholder="14.5" class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Status Operacional *</label>
+                        <select id="pneu-status" required class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                            <option value="Estoque">Em Estoque</option>
+                            <option value="Reforma">Em Reforma</option>
+                            <option value="Sucateado">Sucateado (mantém no histórico)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-3 border-t">
+                    <button type="button" onclick="closeModal('modal-pneu')" class="px-4 py-2 border rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium">Salvar Pneu</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL EDIÇÃO DE PNEU -->
+    <div id="modal-editar-pneu" class="fixed inset-0 bg-slate-900/50 hidden backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[92vh] overflow-y-auto p-6 space-y-4 my-4">
+            <div class="flex items-center justify-between border-b pb-3"><div><h3 class="font-bold text-slate-800">Editar cadastro do pneu</h3><p id="editar-pneu-id" class="text-xs text-slate-500 mt-1"></p></div><button type="button" onclick="closeModal('modal-editar-pneu')" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark"></i></button></div>
+            <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">Veículo, posição, status, sulco/vida atual e recapagens não podem ser alterados aqui. Para mover ou medir, abra uma ordem de serviço.</div>
+            <form id="form-editar-pneu" onsubmit="saveEditedTire(event)" class="space-y-3">
+                <input type="hidden" id="editar-pneu-id-interno">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Nº de fogo / série</label><input id="editar-pneu-fogo" class="field-control w-full" required><label class="block text-xs text-slate-500 mt-1">Se mudar, informe o motivo abaixo.</label></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Medida</label><input id="editar-pneu-medida" class="field-control w-full" required></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Marca</label><input id="editar-pneu-marca" class="field-control w-full" required></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Modelo</label><input id="editar-pneu-modelo" class="field-control w-full" required></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">DOT</label><input id="editar-pneu-dot" class="field-control w-full"></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Vida / tipo de aquisição</label><select id="editar-pneu-vida" class="field-control w-full"><option value="Novo (1ª Vida)">Novo (1ª Vida)</option><option value="Recapado (2ª Vida)">Recapado (2ª Vida)</option><option value="Recapado (3ª Vida)">Recapado (3ª Vida)</option></select></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Grupo / aplicação</label><select id="editar-pneu-grupo" class="field-control w-full"><option>Direcional</option><option>Tração</option><option>Livre / Implemento</option><option>Misto</option><option>Fora de estrada</option><option>Agrícola</option><option>Industrial / Maciço</option><option>Outro</option></select></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Custo inicial / aquisição (R$)</label><input type="number" id="editar-pneu-custo" min="0" step="0.01" class="field-control w-full" required></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Data da compra</label><input type="date" id="editar-pneu-data-compra" class="field-control w-full"></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Fornecedor</label><select id="editar-pneu-fornecedor" class="field-control w-full"><option value="">Não informado</option></select></div>
+                </div>
+                <div><label class="block text-xs font-medium text-slate-700 mb-1">Motivo da alteração do Nº de fogo</label><input id="editar-pneu-motivo-fogo" class="field-control w-full" placeholder="Obrigatório somente se alterar o Nº de fogo"></div>
+                <div><label class="block text-xs font-medium text-slate-700 mb-1">Motivo da alteração do custo</label><input id="editar-pneu-motivo-custo" class="field-control w-full" placeholder="Obrigatório se alterar o custo: impacta o custo por km"></div>
+                <div><label class="block text-xs font-medium text-slate-700 mb-1">Motivo geral da edição</label><textarea id="editar-pneu-motivo-geral" rows="2" class="field-control w-full" placeholder="Descreva o motivo das demais alterações"></textarea></div>
+                <div class="grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-3 text-xs text-slate-600"><div><strong>Veículo / posição</strong><div id="editar-pneu-veiculo"></div></div><div><strong>Status / sulco atual</strong><div id="editar-pneu-status"></div></div><p class="col-span-2 text-slate-500">Campos bloqueados: para mover ou medir, abra uma ordem de serviço.</p></div>
+                <div class="flex justify-end gap-2 border-t pt-3"><button type="button" onclick="closeModal('modal-editar-pneu')" class="px-4 py-2 border rounded-lg text-sm">Cancelar</button><button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold">Salvar alterações</button></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL VEICULO -->
+    <div id="modal-veiculo" class="fixed inset-0 bg-slate-900/50 hidden backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-xl shadow-xl max-w-3xl w-full p-6 space-y-4 my-6">
+            <div class="flex justify-between items-center border-b pb-3">
+                <div><h3 id="veiculo-modal-title" class="font-bold text-slate-800">Cadastrar Novo Veículo</h3><p class="text-xs text-slate-500 mt-1">Configure eixos e rodados para gerar o mapa de pneus automaticamente.</p></div>
+                <button type="button" onclick="closeModal('modal-veiculo')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="form-veiculo" onsubmit="handleSaveVeiculo(event)" class="space-y-4"><input type="hidden" id="veiculo-edit-id" value="">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Prefixo</label><input type="text" id="veiculo-prefixo" placeholder="Ex: TR-01" class="field-control"></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Placa *</label><input type="text" id="veiculo-placa" required placeholder="ABC-1D23" class="field-control uppercase"></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Ano / Modelo</label><input type="text" id="veiculo-ano" placeholder="2024" class="field-control"></div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Modelo / Descrição *</label><input type="text" id="veiculo-modelo" required placeholder="Ex: Volvo FH 540" class="field-control"></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Categoria do Veículo *</label>
+                        <select id="veiculo-categoria" required class="field-control">
+                            <option value="Cavalo mecânico">Cavalo mecânico</option><option value="Caminhão truck">Caminhão truck</option><option value="Caminhão bitruck">Caminhão bitruck</option><option value="Caminhão rígido">Caminhão rígido</option><option value="Caminhão toco">Caminhão toco</option><option value="VUC / 3/4">VUC / 3/4</option><option value="Caminhão fora de estrada">Caminhão fora de estrada</option><option value="Semirreboque">Semirreboque</option><option value="Reboque">Reboque</option><option value="Bitrem / Rodotrem">Bitrem / Rodotrem</option><option value="Ônibus / Micro-ônibus">Ônibus / Micro-ônibus</option><option value="Utilitário / Van">Utilitário / Van</option><option value="Picape">Picape</option><option value="Trator agrícola">Trator agrícola</option><option value="Colheitadeira">Colheitadeira</option><option value="Pulverizador agrícola">Pulverizador agrícola</option><option value="Pá-carregadeira">Pá-carregadeira</option><option value="Retroescavadeira">Retroescavadeira</option><option value="Motoniveladora">Motoniveladora</option><option value="Empilhadeira">Empilhadeira</option><option value="Equipamento industrial / portuário">Equipamento industrial / portuário</option><option value="Outro equipamento">Outro equipamento</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Configuração / Tração *</label>
+                        <select id="veiculo-config" required onchange="applyVehiclePreset()" class="field-control">
+                            <option value="truck-6x2" selected>Truck 6x2 — 10 pneus</option><option value="truck-6x4">Truck traçado 6x4 — 10 pneus</option><option value="cavalo-4x2">Cavalo / caminhão 4x2 — 6 pneus</option><option value="cavalo-6x2">Cavalo mecânico 6x2 — 10 pneus</option><option value="cavalo-6x4">Cavalo mecânico 6x4 — 10 pneus</option><option value="bitruck-8x2">Bitruck 8x2 — 12 pneus</option><option value="bitruck-8x4">Bitruck 8x4 — 12 pneus</option><option value="4x2-4">4x2 — rodado simples — 4 pneus</option><option value="4x4-4">4x4 — rodado simples — 4 pneus</option><option value="6x6">6x6 — 10 pneus (base)</option><option value="8x8">8x8 — 16 pneus (base)</option><option value="semi-2">Semirreboque — 2 eixos / 8 pneus</option><option value="semi-3">Semirreboque — 3 eixos / 12 pneus</option><option value="semi-4">Semirreboque — 4 eixos / 16 pneus</option><option value="agricola-4x4">Máquina agrícola 4x4 — 4 pneus</option><option value="personalizada">Configuração personalizada</option>
+                        </select>
+                    </div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Odômetro / Horímetro inicial *</label><input type="number" id="veiculo-km" required min="0" placeholder="120000" class="field-control"></div>
+                    <div><label class="block text-xs font-medium text-slate-700 mb-1">Chassi / Nº de série</label><input type="text" id="veiculo-chassi" placeholder="Opcional" class="field-control uppercase"></div>
+                </div>
+                <div class="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"><div><h4 class="font-semibold text-slate-800 text-sm">Configuração exata dos eixos</h4><p class="text-xs text-slate-500">Cada eixo aceita 1 ou 2 pneus por lado. O total é calculado automaticamente.</p></div><button type="button" onclick="addVehicleAxle()" class="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2"><i class="fa-solid fa-plus mr-1"></i>Adicionar eixo</button></div>
+                    <div id="vehicle-axle-editor" class="space-y-2"></div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-slate-200 pt-3">
+                        <div><label for="veiculo-estepe" class="soft-label">Quantidade de estepes</label><input type="number" id="veiculo-estepe" min="0" max="50" step="1" value="1" oninput="updateVehiclePreview()" class="field-control" placeholder="Digite a quantidade de estepes"></div>
+                        <div class="rounded-lg bg-white border border-slate-200 px-4 py-2"><span class="text-xs text-slate-500">Pneus montados</span> <strong id="vehicle-tire-total" class="text-lg text-slate-800 ml-2">10</strong><span class="text-slate-400 mx-2">+</span><span class="text-xs text-slate-500">Estepe</span> <strong id="vehicle-spare-total" class="text-lg text-slate-800">1</strong><span class="text-xs text-slate-500 ml-2">= total rastreável <strong id="vehicle-all-total" class="text-emerald-700">11</strong></span></div>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-3 border-t"><button type="button" onclick="closeModal('modal-veiculo')" class="px-4 py-2 border rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50">Cancelar</button><button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium"><i class="fa-solid fa-floppy-disk mr-1"></i>Salvar Veículo e Mapa</button></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL MOTORISTA / COLABORADOR -->
+    <div id="modal-motorista" class="fixed inset-0 bg-slate-900/50 hidden backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3"><div><h3 class="font-bold text-slate-800">Cadastrar Motorista / Colaborador</h3><p class="text-xs text-slate-500 mt-1">Cadastre motoristas e borracheiros para seleção nas ordens de serviço.</p></div><button type="button" onclick="closeModal('modal-motorista')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button></div>
+            <form id="form-motorista" onsubmit="handleSaveMotorista(event)" class="space-y-3">
+                <div><label class="block text-xs font-medium text-slate-700 mb-1">Nome Completo *</label><input type="text" id="motorista-nome" required class="field-control"></div>
+                <div><label class="block text-xs font-medium text-slate-700 mb-1">Função *</label><select id="motorista-funcao" required onchange="toggleMotoristaFields()" class="field-control"><option value="Motorista">Motorista</option><option value="Borracheiro">Borracheiro</option><option value="Colaborador da oficina">Colaborador da oficina</option><option value="Gestor de frota">Gestor de frota</option></select></div>
+                <div class="grid grid-cols-2 gap-3"><div><label class="block text-xs font-medium text-slate-700 mb-1">CPF *</label><input type="text" id="motorista-cpf" required placeholder="000.000.000-00" class="field-control"></div><div id="motorista-cnh-wrap"><label class="block text-xs font-medium text-slate-700 mb-1">Categoria CNH</label><select id="motorista-cnh" class="field-control"><option value="Categoria E">Categoria E</option><option value="Categoria D">Categoria D</option><option value="Categoria C">Categoria C</option><option value="Categoria B">Categoria B</option><option value="Não informado">Não informado</option></select></div></div>
+                <div><label class="block text-xs font-medium text-slate-700 mb-1">Telefone / Celular</label><input type="text" id="motorista-fone" placeholder="(00) 90000-0000" class="field-control"></div>
+                <div class="flex justify-end gap-2 pt-3 border-t"><button type="button" onclick="closeModal('modal-motorista')" class="px-4 py-2 border rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50">Cancelar</button><button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium">Salvar Cadastro</button></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL FORNECEDOR -->
+    <div id="modal-fornecedor" class="fixed inset-0 bg-slate-900/50 hidden backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 class="font-bold text-slate-800">Cadastrar Fornecedor</h3>
+                <button onclick="closeModal('modal-fornecedor')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="form-fornecedor" onsubmit="handleSaveFornecedor(event)" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-700 mb-1">Razão Social / Nome Fantasia *</label>
+                    <input type="text" id="fornecedor-nome" required class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-700 mb-1">CNPJ / CPF *</label>
+                    <input type="text" id="fornecedor-cnpj" required placeholder="00.000.000/0001-00" class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Tipo de Serviço *</label>
+                        <select id="fornecedor-tipo" required class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                            <option value="Recapadora / Bandas">Recapadora / Bandas</option>
+                            <option value="Borracharia / Manutenção">Borracharia / Manutenção</option>
+                            <option value="Revendedor de Pneus">Revendedor de Pneus</option>
+                            <option value="Auto Center / Alinhamento">Auto Center / Alinhamento</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Telefone</label>
+                        <input type="text" id="fornecedor-fone" placeholder="(00) 3000-0000" class="w-full rounded-lg border-slate-300 border text-sm p-2">
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-3 border-t">
+                    <button type="button" onclick="closeModal('modal-fornecedor')" class="px-4 py-2 border rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium">Salvar Fornecedor</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL USUARIO -->
+    <div id="modal-usuario" class="fixed inset-0 bg-slate-900/50 hidden backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3"><div><h3 class="font-bold text-slate-800">Cadastrar Usuário</h3><p class="text-xs text-slate-500 mt-1">Registre o usuário e deixe o primeiro acesso preparado.</p></div><button type="button" onclick="closeModal('modal-usuario')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button></div>
+            <form id="form-usuario" onsubmit="handleSaveUsuario(event)" class="space-y-3">
+                <div><label class="block text-xs font-medium text-slate-700 mb-1">Nome Completo *</label><input type="text" id="user-nome" required class="field-control"></div>
+                <div><label class="block text-xs font-medium text-slate-700 mb-1">E-mail de acesso *</label><input type="email" id="user-email" required placeholder="usuario@empresa.com.br" class="field-control"></div>
+                <div><label class="block text-xs font-medium text-slate-700 mb-1">Perfil de Acesso *</label><select id="user-perfil" required class="field-control"><option value="Administrador">Administrador</option><option value="Gestor de Frota">Gestor de Frota</option><option value="Operador / Borracheiro">Operador / Borracheiro</option><option value="Consulta / Auditoria">Consulta / Auditoria</option></select></div>
+                <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"><i class="fa-solid fa-envelope-circle-check mr-1"></i> O convite por e-mail e a definição segura de senha serão ativados na integração com Supabase Auth. Neste protótipo, o usuário ficará como <strong>convite pendente</strong>; nenhum e-mail real será enviado ainda.</div>
+                <div class="flex justify-end gap-2 pt-3 border-t"><button type="button" onclick="closeModal('modal-usuario')" class="px-4 py-2 border rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50">Cancelar</button><button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium"><i class="fa-solid fa-user-plus mr-1"></i>Preparar primeiro acesso</button></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL NOVA OS / MOVIMENTAÇÃO DE PNEUS -->
+    <div id="modal-ordem" class="fixed inset-0 bg-slate-900/50 hidden backdrop-blur-sm z-50 flex items-center justify-center p-3 overflow-y-auto">
+        <div class="bg-white rounded-xl shadow-xl max-w-5xl w-full p-5 md:p-6 space-y-4 my-5">
+            <div class="flex justify-between items-center border-b pb-3"><div><h3 class="font-bold text-slate-800 text-lg">Nova Ordem de Serviço</h3><p class="text-xs text-slate-500 mt-1">Selecione pneus cadastrados, registre o serviço e atualize a localização no mesmo fluxo.</p></div><button type="button" onclick="closeModal('modal-ordem')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button></div>
+            <form id="form-ordem" onsubmit="handleSaveOrdem(event)" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div><label class="soft-label">Nº OS (sequencial único)</label><input type="text" id="os-numero" readonly class="field-control bg-slate-100 font-bold text-emerald-700"></div>
+                    <div><label class="soft-label">Data e hora *</label><input type="datetime-local" id="os-data" required class="field-control"></div>
+                    <div><label class="soft-label">Odômetro / horímetro *</label><input type="number" min="0" id="os-km" required placeholder="Leitura atual" class="field-control"></div>
+                    <div><label class="soft-label">Local do serviço *</label><select id="os-local" onchange="setOSOrigin()" required class="field-control"><option value="Interno">Oficina interna</option><option value="Externo">Serviço externo</option></select></div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div><label class="soft-label">Veículo / equipamento *</label><select id="os-veiculo" required onchange="renderOSTirePicker()" class="field-control"><option value="">Selecione</option></select></div>
+                    <div><label class="soft-label">Motorista responsável</label><select id="os-motorista" class="field-control"><option value="">Não informado</option></select></div>
+                    <div id="os-borracheiro-wrap"><label class="soft-label">Borracheiro / colaborador *</label><select id="os-borracheiro" class="field-control"><option value="">Selecione o colaborador</option></select></div>
+                    <div id="os-fornecedor-wrap" class="hidden"><label class="soft-label">Fornecedor / prestador *</label><select id="os-fornecedor" class="field-control"><option value="">Selecione o fornecedor</option></select></div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div><label class="soft-label">Tipo de serviço / movimentação *</label><select id="os-tipo" required onchange="renderOSDynamicFields();renderOSTirePicker();renderOSSelectedTires()" class="field-control"><option value="Inspeção de sulco">Inspeção de sulco</option><option value="Montagem / instalação">Montagem / instalação</option><option value="Remoção para estoque">Remoção para estoque</option><option value="Rodízio / troca de posição">Rodízio / troca de posição</option><option value="Recapagem / reforma">Recapagem / reforma</option><option value="Retorno de reforma / liberação">Retorno de reforma / liberação</option><option value="Conserto / remendo">Conserto / remendo</option><option value="Alinhamento / balanceamento">Alinhamento / balanceamento</option><option value="Compra de pneus">Compra de pneus</option><option value="Sucateamento">Sucateamento</option></select></div>
+                    <div><label class="soft-label">Valor total (R$) *</label><input type="number" step="0.01" min="0" id="os-valor" required placeholder="0,00" class="field-control"></div>
+                    <div><label class="soft-label">Status da OS</label><select id="os-status" class="field-control"><option value="Aberta">Aberta</option><option value="Concluída">Concluída</option><option value="Cancelada">Cancelada</option></select></div>
+                </div>
+                <div id="os-tipo-campos-dinamicos" class="hidden grid grid-cols-1 md:grid-cols-2 gap-3 border border-emerald-200 bg-emerald-50/50 rounded-xl p-3"></div>
+                <div class="border border-slate-200 rounded-xl p-4 space-y-3">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2"><div><h4 class="font-semibold text-slate-800">1. Selecione os pneus envolvidos</h4><p class="text-xs text-slate-500">Mostra os 10 pneus mais recentes; use a busca para localizar qualquer pneu por DOT, nº de fogo, marca, modelo ou tamanho.</p></div><span id="os-selected-count" class="text-xs font-bold rounded-full bg-emerald-50 text-emerald-700 px-3 py-1">0 selecionados</span></div>
+                    <input type="search" id="os-pneus-busca" oninput="filterOSTirePicker()" placeholder="Buscar por DOT, nº de fogo, marca, modelo ou tamanho..." class="field-control">
+                    <div id="os-pneus-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 max-h-56 overflow-y-auto"><p class="text-sm text-slate-400">Selecione um veículo para carregar pneus.</p></div>
+                    <div class="border-t border-slate-100 pt-3"><h5 class="text-sm font-semibold text-slate-700 mb-2">2. Posição de destino / leitura do sulco</h5><div id="os-pneus-selecionados" class="grid grid-cols-1 lg:grid-cols-2 gap-2"><p class="text-xs text-slate-400">Marque um ou mais pneus acima para configurar a ação.</p></div></div>
+                </div>
+                <div><label class="soft-label">Observações / diagnóstico</label><textarea id="os-obs" rows="2" placeholder="Motivo da troca, desgaste observado, serviço executado, autorização..." class="field-control"></textarea></div>
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 border-t pt-3"><p class="text-xs text-slate-400"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Ao salvar, a OS entra no histórico e registra a movimentação de cada pneu selecionado.</p><div class="flex justify-end gap-2"><button type="button" onclick="closeModal('modal-ordem')" class="px-4 py-2 border rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50">Cancelar</button><button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium"><i class="fa-solid fa-check mr-1"></i>Salvar OS e movimentações</button></div></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL ALOCAÇÃO MANUAL DE PNEU NO MAPA -->
+    <div id="modal-alocar-pneu" class="fixed inset-0 bg-slate-900/50 hidden backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-5 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3"><div><h3 class="font-bold text-slate-800">Pneu nesta posição</h3><p id="alocar-posicao-label" class="text-xs text-slate-500 mt-1"></p></div><button type="button" onclick="closeModal('modal-alocar-pneu')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button></div>
+            <form id="form-alocar-pneu" onsubmit="handleAssignTire(event)" class="space-y-3"><input type="hidden" id="alocar-veiculo-id"><input type="hidden" id="alocar-slot-key"><div><label class="soft-label">Selecione o pneu</label><select id="alocar-pneu-select" required class="field-control"></select></div><div class="text-xs text-slate-500 bg-slate-50 rounded-lg p-3">Um pneu que já esteja montado será removido da posição anterior e o histórico registrará a transferência. Para liberar a posição, selecione “Deixar posição vazia”.</div><div class="flex justify-end gap-2 border-t pt-3"><button type="button" onclick="closeModal('modal-alocar-pneu')" class="px-4 py-2 border rounded-lg text-sm">Cancelar</button><button type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold">Confirmar posição</button></div></form>
+        </div>
+    </div>
+
+        <div id="modal-mapa-posicao-pneu" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-5 space-y-4">
+                <div class="flex items-center justify-between border-b pb-3"><div><h3 class="font-bold text-slate-800">Escolher posição no mapa</h3><p id="pneu-mapa-subtitulo" class="text-xs text-slate-500 mt-1">Verde: livre · Vermelho: ocupada</p></div><button type="button" onclick="closeTirePositionMap()" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark"></i></button></div>
+                <div id="pneu-mapa-posicoes" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2"></div>
+                <div class="flex justify-end gap-2 border-t pt-3"><button type="button" onclick="closeTirePositionMap()" class="px-4 py-2 border rounded-lg text-sm">Cancelar</button><button type="button" onclick="confirmTirePositionMap()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold">Concluído</button></div>
+            </div>
+        </div>
+
+    <script>
+        const STORAGE_KEY = 'llk-system-state-v3';
+        let currentUser = 'Admin LK Pneus';
+        let state = {
+            pneus: [], veiculos: [], motoristas: [], fornecedores: [],
+            usuarios: [{ id: 1, nome: 'Admin LK Pneus', email: 'admin@llk.com', perfil: 'Administrador', status: 'Ativo', conviteEnviado: false }],
+            ordens: [], auditoria: [], movimentacoes: [], osCounter: 1001
+        };
+        const chartInstances = {};
+        let activeAllocation = null;
+
+        const VEHICLE_PRESETS = {
+            'truck-6x2': [{ papel:'Direcional', pneusPorLado:1 }, { papel:'Tração', pneusPorLado:2 }, { papel:'Auxiliar / trucado', pneusPorLado:2 }],
+            'truck-6x4': [{ papel:'Direcional', pneusPorLado:1 }, { papel:'Tração', pneusPorLado:2 }, { papel:'Tração', pneusPorLado:2 }],
+            'cavalo-4x2': [{ papel:'Direcional', pneusPorLado:1 }, { papel:'Tração', pneusPorLado:2 }],
+            'cavalo-6x2': [{ papel:'Direcional', pneusPorLado:1 }, { papel:'Tração', pneusPorLado:2 }, { papel:'Auxiliar', pneusPorLado:2 }],
+            'cavalo-6x4': [{ papel:'Direcional', pneusPorLado:1 }, { papel:'Tração', pneusPorLado:2 }, { papel:'Tração', pneusPorLado:2 }],
+            'bitruck-8x2': [{ papel:'Direcional 1', pneusPorLado:1 }, { papel:'Direcional 2', pneusPorLado:1 }, { papel:'Tração', pneusPorLado:2 }, { papel:'Auxiliar', pneusPorLado:2 }],
+            'bitruck-8x4': [{ papel:'Direcional 1', pneusPorLado:1 }, { papel:'Direcional 2', pneusPorLado:1 }, { papel:'Tração', pneusPorLado:2 }, { papel:'Tração', pneusPorLado:2 }],
+            '4x2-4': [{ papel:'Dianteiro / direcional', pneusPorLado:1 }, { papel:'Traseiro', pneusPorLado:1 }],
+            '4x4-4': [{ papel:'Dianteiro direcional/motriz', pneusPorLado:1 }, { papel:'Traseiro motriz', pneusPorLado:1 }],
+            '6x6': [{ papel:'Dianteiro motriz/direcional', pneusPorLado:1 }, { papel:'Tração', pneusPorLado:2 }, { papel:'Tração', pneusPorLado:2 }],
+            '8x8': [{ papel:'Eixo dianteiro 1', pneusPorLado:2 }, { papel:'Eixo dianteiro 2', pneusPorLado:2 }, { papel:'Tração', pneusPorLado:2 }, { papel:'Tração', pneusPorLado:2 }],
+            'semi-2': [{ papel:'Semirreboque', pneusPorLado:2 }, { papel:'Semirreboque', pneusPorLado:2 }],
+            'semi-3': [{ papel:'Semirreboque', pneusPorLado:2 }, { papel:'Semirreboque', pneusPorLado:2 }, { papel:'Semirreboque', pneusPorLado:2 }],
+            'semi-4': [{ papel:'Semirreboque', pneusPorLado:2 }, { papel:'Semirreboque', pneusPorLado:2 }, { papel:'Semirreboque', pneusPorLado:2 }, { papel:'Semirreboque', pneusPorLado:2 }],
+            'agricola-4x4': [{ papel:'Dianteiro', pneusPorLado:1 }, { papel:'Traseiro', pneusPorLado:1 }],
+            'personalizada': [{ papel:'Direcional', pneusPorLado:1 }, { papel:'Tração', pneusPorLado:2 }]
+        };
+
+        const WINDOW_NAME_PREFIX = 'LLK_SYSTEM_STATE_V1:';
+        let storageMode = 'unknown';
+
+        function updateStorageStatus(mode) {
+            storageMode = mode || storageMode;
+            const banner = document.getElementById('storage-warning');
+            if (!banner) return;
+            const title = document.getElementById('storage-warning-title');
+            const message = document.getElementById('storage-warning-message');
+            if (storageMode === 'localStorage') {
+                banner.classList.add('hidden');
+                return;
+            }
+            banner.classList.remove('hidden');
+            if (storageMode === 'window.name') {
+                if (title) title.textContent = 'Modo de teste: armazenamento limitado';
+                if (message) message.textContent = 'Este contexto bloqueou o armazenamento normal. Os dados estão sendo mantidos nesta aba como alternativa; evite abrir uma nova aba e baixe um backup antes de fechar.';
+            } else {
+                if (title) title.textContent = 'Atenção: não foi possível persistir os dados';
+                if (message) message.textContent = 'O navegador bloqueou o armazenamento local e a alternativa desta aba não está disponível. Os dados podem ser perdidos ao atualizar. Abra o site por HTTPS/HTTP e baixe um backup enquanto os dados ainda estiverem na tela.';
+            }
+        }
+
+        function loadState() {
+            let saved = null;
+            try {
+                saved = localStorage.getItem(STORAGE_KEY);
+                storageMode = 'localStorage';
+            } catch (err) {
+                storageMode = 'window.name';
+            }
+            if (!saved && typeof window.name === 'string' && window.name.startsWith(WINDOW_NAME_PREFIX)) {
+                saved = window.name.slice(WINDOW_NAME_PREFIX.length);
+                storageMode = 'window.name';
+            }
+            if (saved) {
+                try { state = { ...state, ...JSON.parse(saved) }; }
+                catch (err) { console.warn('O rascunho salvo está inválido; será iniciado um estado limpo.', err); }
+            }
+            ['pneus','veiculos','motoristas','fornecedores','usuarios','ordens','auditoria','movimentacoes'].forEach(k => { if (!Array.isArray(state[k])) state[k] = []; });
+            if (!state.usuarios.some(u => u.id === 1)) state.usuarios.unshift({ id:1, nome:'Admin LK Pneus', email:'admin@llk.com', perfil:'Administrador', status:'Ativo', conviteEnviado:false });
+            if (!Number.isFinite(Number(state.osCounter))) state.osCounter = 1001;
+            state.pneus.forEach((p,i) => { if (p.id===undefined||p.id===null) p.id=`pneu-${Date.now()}-${i}`; if (!p.internalId) p.internalId=`PNEU-${String(p.id).replace(/[^a-zA-Z0-9]/g,'')}`; if (!Array.isArray(p.historico)) p.historico = []; if (!Array.isArray(p.custos)) p.custos = []; });
+            state.ordens.forEach(o => { if (!Array.isArray(o.pneusIds)) o.pneusIds = []; });
+            updateStorageStatus(storageMode);
+        }
+
+        function saveState() {
+            const serialized = JSON.stringify(state);
+            try {
+                localStorage.setItem(STORAGE_KEY, serialized);
+                updateStorageStatus('localStorage');
+                return true;
+            } catch (err) {
+                // Fallback para pré-visualizadores e arquivos locais que bloqueiam localStorage.
+                try {
+                    window.name = WINDOW_NAME_PREFIX + serialized;
+                    if (window.name.startsWith(WINDOW_NAME_PREFIX)) {
+                        updateStorageStatus('window.name');
+                        return true;
+                    }
+                } catch (fallbackError) {
+                    console.warn('Não foi possível salvar o rascunho nesta aba.', fallbackError);
+                }
+                updateStorageStatus('memory');
+                console.warn('Não foi possível salvar dados locais. Os dados podem ficar apenas na memória desta página.', err);
+                return false;
+            }
+        }
+
+        function exportStateBackup() {
+            try {
+                const blob = new Blob([JSON.stringify({app:'LK Pneus', version:1, exportedAt:new Date().toISOString(), state}, null, 2)], {type:'application/json'});
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `backup-lk-pneus-${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            } catch (err) {
+                alert('Não foi possível gerar o backup neste navegador.');
+                console.error(err);
+            }
+        }
+
+        async function importStateBackup(event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            if (!confirm('Restaurar este backup substituirá os dados atualmente abertos nesta tela. Deseja continuar?')) { event.target.value=''; return; }
+            try {
+                const data = JSON.parse(await file.text());
+                const imported = data && data.state ? data.state : data;
+                const keys = ['pneus','veiculos','motoristas','fornecedores','usuarios','ordens','auditoria','movimentacoes'];
+                if (!imported || !keys.some(k => Array.isArray(imported[k]))) throw new Error('O arquivo não parece ser um backup do LK Pneus.');
+                state = { ...state, ...imported };
+                keys.forEach(k => { if (!Array.isArray(state[k])) state[k]=[]; });
+                if (!Number.isFinite(Number(state.osCounter))) state.osCounter=1001;
+                saveState();
+                renderVeiculos(); renderMotoristas(); renderFornecedores(); renderUsuarios(); renderOrdens(); renderPneus();
+                updateDashboardMetrics(); renderAuditoria(); populateOSDropdowns(); populateVehicleMapSelect(); populateDashboardFilters(); renderVehicleMap(); renderAnalyticsDashboard();
+                alert('Backup restaurado. Confira os dados antes de continuar.');
+            } catch (err) {
+                alert('Não foi possível restaurar o backup: ' + (err?.message || 'arquivo inválido'));
+            } finally {
+                event.target.value='';
+            }
+        }
+
+        function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+        function money(value) { return (Number(value)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+        function whenNowLocal() { const d = new Date(); const local = new Date(d.getTime()-d.getTimezoneOffset()*60000); return local.toISOString().slice(0,16); }
+        function formatDate(value) { if (!value) return '-'; const d = new Date(value); return isNaN(d) ? value : d.toLocaleString('pt-BR'); }
+        function getMountedCount(vehicle) { return (vehicle.eixos || []).reduce((sum, axle) => sum + 2 * (Number(axle.pneusPorLado)||1), 0); }
+        function tireLocationLabel(vehicle, axleIndex, side, wheelIndex, wheelsPerSide) {
+            const sideLabel = side === 'L' ? 'Esquerdo' : 'Direito';
+            let wheelLabel = '';
+            if (wheelsPerSide > 1) wheelLabel = wheelIndex === 0 ? 'Externo' : 'Interno';
+            else wheelLabel = 'Único';
+            const papel = (vehicle.eixos?.[axleIndex]?.papel || `Eixo ${axleIndex+1}`);
+            return `Eixo ${axleIndex+1} (${papel}) • ${sideLabel}${wheelLabel ? ' • '+wheelLabel : ''}`;
+        }
+        function getSlots(vehicle) {
+            if (!vehicle) return [];
+            const slots = [];
+            (vehicle.eixos || []).forEach((axle, ai) => {
+                const n = Math.max(1, Math.min(2, Number(axle.pneusPorLado)||1));
+                ['L','R'].forEach(side => {
+                    // Outside is shown nearest the outside edge; each side has stable inner/outer identifiers.
+                    const wheelOrder = n === 2 ? [0,1] : [0];
+                    wheelOrder.forEach(wi => {
+                        const wheelKey = n === 1 ? 'single' : (wi === 0 ? 'outer' : 'inner');
+                        const slotKey = `axle-${ai}-${side}-${wheelKey}`;
+                        slots.push({ key:slotKey, axleIndex:ai, side, wheelIndex:wi, wheelsPerSide:n, label:tireLocationLabel(vehicle,ai,side,wi,n), sideLabel:side==='L'?'Esquerdo':'Direito', wheelLabel:n===1?'Único':(wi===0?'Externo':'Interno'), papel:axle.papel||`Eixo ${ai+1}` });
+                    });
+                });
+            });
+            const spareCount = Number.isFinite(Number(vehicle.quantidadeEstepe)) ? Math.max(0, Number(vehicle.quantidadeEstepe)) : (vehicle.temEstepe ? 1 : 0);
+            for (let si=1; si<=spareCount; si++) slots.push({ key:si===1?'spare':`spare-${si}`, label:spareCount===1?'Estepe':`Estepe ${si}`, sideLabel:'Estepe', wheelLabel:spareCount===1?'Estepe':`Estepe ${si}`, papel:'Estepe', spare:true });
+            return slots;
+        }
+        function positionName(vehicle, key) { const slot=getSlots(vehicle).find(s=>s.key===key); if(slot)return slot.label; if(!key||key==='Estoque')return 'Estoque'; const m=String(key).match(/^axle-(\d+)-([LR])-(single|outer|inner)$/); if(m){const axle=Number(m[1])+1;const side=m[2]==='L'?'esquerdo':'direito';const wheel=m[3]==='single'?'simples':m[3]==='outer'?'externo':'interno';return `Eixo ${axle} · lado ${side} · roda ${wheel}`;} const sp=String(key).match(/^spare(?:-(\d+))?$/);if(sp)return sp[1]?`Estepe ${sp[1]}`:'Estepe';return key; }
+        function vehicleById(id) { return state.veiculos.find(v => String(v.id)===String(id)); }
+        function tireById(id) { return state.pneus.find(p => String(p.id)===String(id)); }
+        function getTireVehicle(p) { return state.veiculos.find(v => String(v.id)===String(p.veiculoId)) || state.veiculos.find(v => v.placa===p.veiculo); }
+        function addTireHistory(tire, action, from, to, details='') {
+            if (!Array.isArray(tire.historico)) tire.historico=[];
+            const item = { id:Date.now()+Math.random(), data:new Date().toISOString(), acao:action, de:from||'Estoque', para:to||'Estoque', detalhes:details, usuario:currentUser };
+            tire.historico.unshift(item); state.movimentacoes.unshift({ ...item, pneuId:tire.id, fogo:tire.fogo });
+        }
+        function addAuditLog(modulo, acao, detalhes) {
+            const now = new Date(); state.auditoria.unshift({ id:Date.now()+Math.random(), time:now.toLocaleDateString('pt-BR')+' '+now.toLocaleTimeString('pt-BR'), usuario:currentUser, modulo, acao, detalhes });
+            if (state.auditoria.length > 2000) state.auditoria = state.auditoria.slice(0,2000);
+            renderAuditoria(); saveState();
+        }
+
+        function switchTab(tab, element) {
+            if (element) { document.querySelectorAll('.rolling-tire').forEach(el=>el.remove()); const tire=document.createElement('i'); tire.className='fa-solid fa-compact-disc rolling-tire'; element.appendChild(tire); setTimeout(()=>tire.remove(),850); }
+            document.querySelectorAll('.tab-content').forEach(el=>el.classList.add('hidden')); document.querySelectorAll('.nav-item').forEach(btn=>btn.classList.remove('bg-slate-800','text-white'));
+            document.getElementById(`tab-${tab}`)?.classList.remove('hidden'); document.getElementById(`nav-${tab}`)?.classList.add('bg-slate-800','text-white');
+            if (tab==='ordens') populateOSDropdowns(); if (tab==='dashboard') { populateDashboardFilters(); renderAnalyticsDashboard(); }
+        }
+        function switchCadastroSubTab(subtab) {
+            document.querySelectorAll('.subtab-content').forEach(el=>el.classList.add('hidden')); document.querySelectorAll('.subnav-btn').forEach(btn=>{btn.classList.remove('border-emerald-500','text-emerald-600','font-semibold');btn.classList.add('border-transparent','text-slate-500');});
+            document.getElementById(`subtab-${subtab}`)?.classList.remove('hidden'); const active=document.getElementById(`subnav-${subtab}`); if(active){active.classList.add('border-emerald-500','text-emerald-600','font-semibold');active.classList.remove('border-transparent','text-slate-500');}
+            if(subtab==='mapa'){ populateVehicleMapSelect(); renderVehicleMap(); }
+        }
+        function openModal(modalId) {
+            if(modalId==='modal-ordem') { populateOSDropdowns(); document.getElementById('os-numero').value=generateNextOSNumber(); document.getElementById('os-data').value=whenNowLocal(); document.getElementById('os-valor').value=''; document.getElementById('os-obs').value=''; document.getElementById('os-status').value='Aberta'; const search=document.getElementById('os-pneus-busca');if(search)search.value='';setOSOrigin(); renderOSDynamicFields();renderOSTirePicker(); }
+            if(modalId==='modal-pneu') { const select=document.getElementById('pneu-veiculo'); select.innerHTML='<option value="Estoque">Em Estoque (Sem Veículo)</option>'+state.veiculos.map(v=>`<option value="${escapeHtml(v.placa)}">${escapeHtml(v.placa)} - ${escapeHtml(v.modelo)}</option>`).join(''); const fornecedorSelect=document.getElementById('pneu-fornecedor'); if(fornecedorSelect)fornecedorSelect.innerHTML='<option value="">Não informado</option>'+state.fornecedores.map(f=>`<option value="${f.id}">${escapeHtml(f.nome)}</option>`).join(''); populatePneuPositionDropdown(); }
+            if(modalId==='modal-veiculo') { resetVehicleFormForCreate(); }
+            if(modalId==='modal-motorista') toggleMotoristaFields();
+            document.getElementById(modalId)?.classList.remove('hidden');
+        }
+        function closeModal(modalId) { const modal=document.getElementById(modalId); if(modal){modal.classList.add('hidden');modal.setAttribute('aria-hidden','true');} }
+        function generateNextOSNumber() { const year=new Date().getFullYear(); let n=Number(state.osCounter)||1001; let val=`OS-${year}-${n}`; while(state.ordens.some(o=>o.numero===val)){n++; val=`OS-${year}-${n}`;} state.osCounter=n; return val; }
+
+        // EIXOS E MAPA DINÂMICO DE VEÍCULOS
+        function applyVehiclePreset() {
+            const key=document.getElementById('veiculo-config')?.value || 'truck-6x2';
+            const specs=(VEHICLE_PRESETS[key]||VEHICLE_PRESETS['personalizada']).map(a=>({...a})); renderVehicleAxleEditor(specs); updateVehiclePreview();
+        }
+        function renderVehicleAxleEditor(specs) {
+            const container=document.getElementById('vehicle-axle-editor'); if(!container)return;
+            container.innerHTML=(specs||[]).map((a,i)=>`<div class="axle-editor-row bg-white border border-slate-200 rounded-lg p-2" data-axle-index="${i}">
+                <div><label class="soft-label">Eixo ${i+1} • Função</label><select class="field-control axle-role-select" onchange="updateVehiclePreview()">${['Direcional','Direcional 1','Direcional 2','Tração','Livre','Auxiliar','Auxiliar / trucado','Semirreboque','Traseiro','Dianteiro motriz/direcional','Outro'].map(r=>`<option ${r===a.papel?'selected':''} value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('')}</select></div>
+                <div><label class="soft-label">Rodado por lado</label><select class="field-control axle-wheels-select" onchange="updateVehiclePreview()"><option value="1" ${Number(a.pneusPorLado)===1?'selected':''}>Simples (1)</option><option value="2" ${Number(a.pneusPorLado)===2?'selected':''}>Duplo (2)</option></select></div>
+                <div class="text-xs text-slate-500 pb-2 text-center"><span class="font-bold text-slate-700 axle-count">${2*(Number(a.pneusPorLado)||1)}</span><br>pneus/eixo</div>
+                <button type="button" title="Remover eixo" onclick="removeVehicleAxle(${i})" class="text-red-500 hover:bg-red-50 rounded-lg h-9"><i class="fa-solid fa-trash"></i></button>
+            </div>`).join(''); updateVehiclePreview();
+        }
+        function readVehicleAxles() { return [...document.querySelectorAll('#vehicle-axle-editor .axle-editor-row')].map((row,i)=>({ numero:i+1, papel:row.querySelector('.axle-role-select')?.value||`Eixo ${i+1}`, pneusPorLado:Number(row.querySelector('.axle-wheels-select')?.value)||1 })); }
+        function addVehicleAxle() { const axles=readVehicleAxles(); axles.push({papel:'Auxiliar',pneusPorLado:2}); renderVehicleAxleEditor(axles); document.getElementById('veiculo-config').value='personalizada'; }
+        function removeVehicleAxle(index) { const axles=readVehicleAxles(); if(axles.length<=1){alert('O veículo precisa ter pelo menos um eixo.');return;} axles.splice(index,1); renderVehicleAxleEditor(axles); document.getElementById('veiculo-config').value='personalizada'; }
+        function updateVehiclePreview() {
+            const axles=readVehicleAxles(); const total=axles.reduce((sum,a)=>sum+2*a.pneusPorLado,0); const spare=Math.max(0, Math.min(50, Math.floor(Number(document.getElementById('veiculo-estepe')?.value)||0)));
+            const spareInput=document.getElementById('veiculo-estepe'); if(spareInput && spareInput.value!=='' && Number(spareInput.value)!==spare) spareInput.value=spare;
+            document.getElementById('vehicle-tire-total')?.replaceChildren(document.createTextNode(total)); document.getElementById('vehicle-spare-total')?.replaceChildren(document.createTextNode(spare)); document.getElementById('vehicle-all-total')?.replaceChildren(document.createTextNode(total+spare));
+            document.querySelectorAll('#vehicle-axle-editor .axle-editor-row').forEach(row=>{const n=Number(row.querySelector('.axle-wheels-select')?.value)||1; const span=row.querySelector('.axle-count'); if(span)span.textContent=2*n;});
+        }
+        let editingVehicleId = null;
+        function resetVehicleFormForCreate() {
+            editingVehicleId = null;
+            const form=document.getElementById('form-veiculo'); if(form)form.reset();
+            document.getElementById('veiculo-edit-id').value='';
+            document.getElementById('veiculo-modal-title').textContent='Cadastrar Novo Veículo';
+            const submit=form?.querySelector('button[type="submit"]'); if(submit)submit.innerHTML='<i class="fa-solid fa-floppy-disk mr-1"></i>Salvar Veículo e Mapa';
+            document.getElementById('veiculo-config').value='truck-6x2';
+            document.getElementById('veiculo-estepe').value='1';
+            applyVehiclePreset();
+        }
+        function editVeiculo(id) {
+            const v=vehicleById(id); if(!v)return;
+            editingVehicleId=String(v.id);
+            const form=document.getElementById('form-veiculo'); form.reset();
+            document.getElementById('veiculo-edit-id').value=String(v.id);
+            document.getElementById('veiculo-prefixo').value=v.prefixo||'';
+            document.getElementById('veiculo-placa').value=v.placa||'';
+            document.getElementById('veiculo-ano').value=v.ano||'';
+            document.getElementById('veiculo-modelo').value=v.modelo||'';
+            const cat=document.getElementById('veiculo-categoria');
+            if(![...cat.options].some(o=>o.value===(v.categoria||''))){const opt=document.createElement('option');opt.value=v.categoria||'';opt.textContent=v.categoria||'';cat.appendChild(opt);} cat.value=v.categoria||cat.options[0]?.value||'';
+            const cfg=document.getElementById('veiculo-config');
+            if(![...cfg.options].some(o=>o.value===(v.configKey||''))){cfg.value='personalizada';}else cfg.value=v.configKey||'personalizada';
+            document.getElementById('veiculo-km').value=Number(v.km)||0;
+            document.getElementById('veiculo-chassi').value=v.chassi||'';
+            document.getElementById('veiculo-estepe').value=Number.isFinite(Number(v.quantidadeEstepe))?Number(v.quantidadeEstepe):(v.temEstepe?1:0);
+            renderVehicleAxleEditor((v.eixos||[]).map((a,i)=>({...a,numero:i+1})));
+            document.getElementById('veiculo-modal-title').textContent='Editar Veículo';
+            const submit=form.querySelector('button[type="submit"]'); if(submit)submit.innerHTML='<i class="fa-solid fa-floppy-disk mr-1"></i>Salvar Alterações';
+            document.getElementById('modal-veiculo').classList.remove('hidden');
+        }
+        function handleSaveVeiculo(e) {
+            e.preventDefault(); const placa=document.getElementById('veiculo-placa').value.trim().toUpperCase();
+            const current=editingVehicleId?vehicleById(editingVehicleId):null;
+            if(state.veiculos.some(v=>v.placa===placa&&String(v.id)!==String(current?.id))){alert('Já existe um veículo cadastrado com esta placa.');return;}
+            const eixos=readVehicleAxles(); if(!eixos.length){alert('Adicione ao menos um eixo.');return;}
+            const quantidadeEstepe=Math.max(0,Math.min(50,Math.floor(Number(document.getElementById('veiculo-estepe').value)||0)));
+            const veiculo={id:current?current.id:Date.now(),prefixo:document.getElementById('veiculo-prefixo').value.trim(),placa,modelo:document.getElementById('veiculo-modelo').value.trim(),ano:document.getElementById('veiculo-ano').value.trim(),categoria:document.getElementById('veiculo-categoria').value,configuracao:document.getElementById('veiculo-config').selectedOptions[0]?.textContent||'Personalizada',configKey:document.getElementById('veiculo-config').value,chassi:document.getElementById('veiculo-chassi').value.trim().toUpperCase(),km:Number(document.getElementById('veiculo-km').value)||0,eixos,quantidadeEstepe,temEstepe:quantidadeEstepe>0,createdAt:current?.createdAt||new Date().toISOString()};
+            if(current){
+                const nextKeys=new Set(getSlots(veiculo).map(slot=>slot.key));
+                const displaced=state.pneus.filter(t=>{const tv=getTireVehicle(t);return tv&&String(tv.id)===String(current.id)&&t.posicao&&t.posicao!=='Estoque'&&!nextKeys.has(t.posicao);});
+                if(displaced.length){const details=displaced.map(t=>`${t.fogo} — posição atual: ${positionName(current,t.posicao)}`).join('\n');alert('Não é possível salvar a edição. As alterações removeriam posições que têm pneus instalados:\n\n'+details+'\n\nMantenha esses eixos/posições ou mova os pneus antes de editar.');return;}
+                const index=state.veiculos.findIndex(v=>String(v.id)===String(current.id));state.veiculos[index]=veiculo;
+                addAuditLog('Veículos','Edição',`${veiculo.placa} ${veiculo.modelo} atualizado.`);
+            }else{
+                state.veiculos.push(veiculo);addAuditLog('Veículos','Criação',`${veiculo.placa} ${veiculo.modelo}: ${getMountedCount(veiculo)} pneus montados${veiculo.quantidadeEstepe>0?' + '+veiculo.quantidadeEstepe+' estepe(s)':''}.`);
+            }
+            saveState();renderVeiculos();populateOSDropdowns();populateVehicleMapSelect();renderVehicleMap();closeModal('modal-veiculo');document.getElementById('form-veiculo').reset();editingVehicleId=null;document.getElementById('veiculo-edit-id').value='';
+        }
+
+        function populateVehicleMapSelect() {
+            const select=document.getElementById('mapa-veiculo-select'); if(!select)return; const old=select.value;
+            select.innerHTML='<option value="">Selecione um veículo</option>'+state.veiculos.map(v=>`<option value="${v.id}">${escapeHtml(v.placa)} — ${escapeHtml(v.modelo)}</option>`).join('');
+            if(state.veiculos.some(v=>String(v.id)===old))select.value=old; else if(state.veiculos.length)select.value=String(state.veiculos[state.veiculos.length-1].id);
+        }
+        function tireStatusClass(tire) { if(!tire)return 'is-empty'; if(Number(tire.sulco)<1.6)return 'is-critical'; if(Number(tire.sulco)<=3)return 'is-alert'; return 'is-good'; }
+        function tireStatusText(tire) { if(!tire)return 'Posição livre'; if(Number(tire.sulco)<1.6)return 'Crítico'; if(Number(tire.sulco)<=3)return 'Atenção'; return 'Adequado'; }
+        function tireAtSlot(vehicle,slotKey) { return state.pneus.find(p=>{if(['Inativo','Sucateado','Baixado'].includes(p.status))return false;const v=getTireVehicle(p); return v&&String(v.id)===String(vehicle.id)&&p.posicao===slotKey;}) || null; }
+        function renderVehicleMap() {
+            const host=document.getElementById('vehicle-map'); if(!host)return; const v=vehicleById(document.getElementById('mapa-veiculo-select')?.value);
+            if(!v){host.innerHTML='<div class="text-center py-12 text-slate-400"><i class="fa-solid fa-truck-fast text-3xl mb-3"></i><p>Selecione um veículo para visualizar o mapa.</p></div>';return;}
+            const slots=getSlots(v); const spareSlots=slots.filter(s=>s.spare); const mountedSlots=slots.filter(s=>!s.spare); const occupied=mountedSlots.filter(s=>tireAtSlot(v,s.key)).length; const total=getMountedCount(v); const stockSpare=spareSlots.length?spareSlots.map(s=>tireAtSlot(v,s.key)).filter(Boolean):[];
+            let html=`<div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-5"><div><div class="flex flex-wrap items-center gap-2"><h3 class="font-bold text-slate-800 text-lg">${escapeHtml(v.placa)} · ${escapeHtml(v.modelo)}</h3><span class="px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-xs">${escapeHtml(v.configuracao||'Configuração personalizada')}</span></div><p class="text-xs text-slate-500 mt-1">${escapeHtml(v.categoria)}${v.ano?' · '+escapeHtml(v.ano):''} · ${v.eixos?.length||0} eixos</p></div><div class="grid grid-cols-3 gap-2"><div class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center"><div class="text-lg font-bold">${total}</div><div class="text-[10px] uppercase text-slate-500">Montáveis</div></div><div class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center"><div class="text-lg font-bold">${occupied}</div><div class="text-[10px] uppercase text-slate-500">Ocupadas</div></div><div class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center"><div class="text-lg font-bold">${total-occupied}</div><div class="text-[10px] uppercase text-slate-500">Livres</div></div></div></div>`;
+            html+='<div class="max-w-3xl mx-auto space-y-3">';
+            (v.eixos||[]).forEach((axle,ai)=>{
+                const leftSlots=mountedSlots.filter(s=>s.axleIndex===ai&&s.side==='L').sort((a,b)=>a.wheelIndex-b.wheelIndex);
+                const rightSlots=mountedSlots.filter(s=>s.axleIndex===ai&&s.side==='R').sort((a,b)=>a.wheelIndex-b.wheelIndex).reverse();
+                html+=`<div class="map-axle-row"><div class="map-axle-side">${leftSlots.map(s=>renderMapWheel(v,s)).join('')}</div><div class="map-chassis"><i class="fa-solid fa-grip-lines-vertical text-xl"></i><span class="text-[10px] font-semibold">EIXO ${ai+1}</span><span class="text-[9px] text-slate-400">${escapeHtml(axle.papel||'Eixo')}</span></div><div class="map-axle-side">${rightSlots.map(s=>renderMapWheel(v,s)).join('')}</div></div>`;
+            });
+            if(spareSlots.length){html+=`<div class="pt-3"><div class="text-center text-xs uppercase font-semibold tracking-wider text-slate-500 mb-2">Estepe(s) (fora dos eixos)</div><div class="flex justify-center flex-wrap gap-2">${spareSlots.map(slot=>renderMapWheel(v,slot)).join('')}</div></div>`;}
+            html+='</div><div class="mt-5 border-t border-slate-100 pt-3 text-xs text-slate-500"><i class="fa-solid fa-circle-info mr-1 text-emerald-600"></i> Cada cartão representa uma posição física gerada pela configuração. O cadastro do veículo não presume que todas as posições já tenham pneu instalado.</div>';
+            host.innerHTML=html;
+        }
+        function renderMapWheel(vehicle,slot) {
+            const p=tireAtSlot(vehicle,slot.key); const status=tireStatusClass(p); const tireText=p?`${p.fogo}`:'Livre'; const sulco=p?`${Number(p.sulco).toFixed(1)} mm`:'Sem pneu';
+            return `<button type="button" class="map-wheel ${status}" onclick="openTireAllocation('${vehicle.id}','${slot.key}')" title="${escapeHtml(slot.label)} — ${escapeHtml(tireStatusText(p))}"><i class="fa-solid fa-circle-dot wheel-icon"></i><span class="block text-[10px] font-bold truncate max-w-[100px]">${escapeHtml(tireText)}</span><span class="block text-[9px] text-slate-500">${escapeHtml(slot.wheelLabel||'')}</span><span class="block text-[9px] ${p?'text-slate-600':'text-slate-400'}">${escapeHtml(sulco)}</span><span class="block text-[9px] mt-1 font-semibold ${p&&Number(p.sulco)<1.6?'text-red-600':p&&Number(p.sulco)<=3?'text-amber-600':p?'text-emerald-600':'text-slate-400'}">${escapeHtml(tireStatusText(p))}</span></button>`;
+        }
+        function openTireAllocation(vehicleId,slotKey) {
+            const v=vehicleById(vehicleId); if(!v)return; const slot=getSlots(v).find(s=>s.key===slotKey); if(!slot)return;
+            activeAllocation={vehicleId:String(vehicleId),slotKey}; document.getElementById('alocar-veiculo-id').value=String(vehicleId); document.getElementById('alocar-slot-key').value=slotKey; document.getElementById('alocar-posicao-label').textContent=`${v.placa} · ${slot.label}`;
+            const current=tireAtSlot(v,slotKey); const select=document.getElementById('alocar-pneu-select');
+            select.innerHTML='<option value="">Deixar posição vazia / remover pneu</option>'+state.pneus.filter(p=>!['Baixado','Inativo','Sucateado'].includes(p.status)).map(p=>{const pv=getTireVehicle(p); const loc=pv?`${pv.placa} · ${positionName(pv,p.posicao)||'posição não definida'}`:'Estoque';return `<option value="${p.id}" ${current&&String(current.id)===String(p.id)?'selected':''}>${escapeHtml(p.fogo)} — ${escapeHtml(p.medida)} — ${escapeHtml(loc)}</option>`;}).join('');
+            document.getElementById('modal-alocar-pneu').classList.remove('hidden');
+        }
+        function handleAssignTire(e) {
+            e.preventDefault(); const vehicle=vehicleById(document.getElementById('alocar-veiculo-id').value); const slotKey=document.getElementById('alocar-slot-key').value; const selectedId=document.getElementById('alocar-pneu-select').value; if(!vehicle)return;
+            const current=tireAtSlot(vehicle,slotKey); const target=selectedId?tireById(selectedId):null; const position=positionName(vehicle,slotKey);
+            if(current&&(!target||String(current.id)!==String(target.id))){const from=`${vehicle.placa} · ${current.posicao}`; current.veiculo='Estoque';current.veiculoId=null;current.posicao='Estoque';if(current.status==='Em Uso')current.status='Estoque';addTireHistory(current,'Remoção / liberação de posição',from,'Estoque',`Posição liberada: ${position}`);}
+            if(target){const prevV=getTireVehicle(target);const from=prevV?`${prevV.placa} · ${positionName(prevV,target.posicao)||'montado'}`:'Estoque';
+                const conflict=state.pneus.find(p=>p.id!==target.id&&getTireVehicle(p)?.id===vehicle.id&&p.posicao===slotKey); if(conflict){alert('Esta posição ainda está ocupada por outro pneu. Libere-a antes de continuar.');return;}
+                target.veiculo=vehicle.placa;target.veiculoId=vehicle.id;target.posicao=slotKey;target.status='Em Uso';addTireHistory(target,'Montagem / transferência',from,`${vehicle.placa} · ${position}`,'Alteração realizada pelo mapa interativo.');
+            }
+            addAuditLog('Movimentação de pneus',target?'Alocação / transferência':'Remoção',`${target?target.fogo:'Pneu removido'} · ${vehicle.placa} · ${position}`); renderPneus();updateDashboardMetrics();renderVehicleMap();renderAnalyticsDashboard();closeModal('modal-alocar-pneu');
+        }
+
+        // DROPDOWNS E ORDENS DE SERVIÇO
+        function populateOSDropdowns() {
+            const v=document.getElementById('os-veiculo'); if(v){const old=v.value;v.innerHTML='<option value="">Selecione um veículo</option>'+state.veiculos.map(x=>`<option value="${x.id}">${escapeHtml(x.placa)} — ${escapeHtml(x.modelo)}</option>`).join(''); if(state.veiculos.some(x=>String(x.id)===old))v.value=old;}
+            const d=document.getElementById('os-motorista'); if(d){const old=d.value;const drivers=state.motoristas.filter(m=>!m.funcao||m.funcao==='Motorista');d.innerHTML='<option value="">Não informado</option>'+drivers.map(m=>`<option value="${m.id}">${escapeHtml(m.nome)}${m.cpf?' · '+escapeHtml(m.cpf):''}</option>`).join(''); if(drivers.some(m=>String(m.id)===old))d.value=old;}
+            const b=document.getElementById('os-borracheiro'); if(b){const old=b.value;const staff=state.motoristas.filter(m=>m.funcao&&m.funcao!=='Motorista');b.innerHTML='<option value="">Selecione o colaborador</option>'+staff.map(m=>`<option value="${m.id}">${escapeHtml(m.nome)} · ${escapeHtml(m.funcao)}</option>`).join(''); if(staff.some(m=>String(m.id)===old))b.value=old;}
+            const f=document.getElementById('os-fornecedor'); if(f){const old=f.value;f.innerHTML='<option value="">Selecione o fornecedor</option>'+state.fornecedores.map(x=>`<option value="${x.id}">${escapeHtml(x.nome)} (${escapeHtml(x.cnpj)})</option>`).join('');if(state.fornecedores.some(x=>String(x.id)===old))f.value=old;}
+        }
+        function setOSOrigin() {
+            const external=document.getElementById('os-local')?.value==='Externo'; const fw=document.getElementById('os-fornecedor-wrap'); const bw=document.getElementById('os-borracheiro-wrap'); const f=document.getElementById('os-fornecedor');const b=document.getElementById('os-borracheiro');
+            fw?.classList.toggle('hidden',!external);bw?.classList.toggle('hidden',external);if(f)f.required=external;if(b)b.required=!external;
+        }
+        function selectedOSTireIds() { return [...document.querySelectorAll('#os-pneus-list input.os-tire-checkbox:checked')].map(el=>String(el.value)); }
+        let osTireCandidates = [];
+        function renderOSTirePicker() {
+            const host=document.getElementById('os-pneus-list'); if(!host)return; const vehicle=vehicleById(document.getElementById('os-veiculo')?.value); const selected=new Set(selectedOSTireIds());
+            if(!vehicle){osTireCandidates=[];host.innerHTML='<p class="text-sm text-slate-400">Selecione um veículo para carregar pneus.</p>';document.getElementById('os-pneus-selecionados').innerHTML='<p class="text-xs text-slate-400">Marque pneus para configurar a ação.</p>';return;}
+            const osType=document.getElementById('os-tipo')?.value||'';
+            const candidates=state.pneus.filter(p=>{const pv=getTireVehicle(p);if(['Baixado','Inativo','Sucateado'].includes(p.status))return false;if(pv)return String(pv.id)===String(vehicle.id);if(p.status==='Estoque'||!p.status)return true;return osType==='Retorno de reforma / liberação'&&p.status==='Reforma';});
+            if(!candidates.length){osTireCandidates=[];host.innerHTML='<div class="text-sm text-slate-400 p-3">Não há pneus cadastrados para este veículo ou no estoque. Cadastre pneus antes de abrir a OS.</div>';document.getElementById('os-pneus-selecionados').innerHTML='<p class="text-xs text-slate-400">Nenhum pneu disponível.</p>';return;}
+            osTireCandidates=candidates.sort((a,b)=>{const av=Date.parse(a.createdAt||'')||Number(a.id)||0;const bv=Date.parse(b.createdAt||'')||Number(b.id)||0;return bv-av;});filterOSTirePicker(); renderOSSelectedTires();
+        }
+        function filterOSTirePicker(){
+            const host=document.getElementById('os-pneus-list');if(!host)return;const q=(document.getElementById('os-pneus-busca')?.value||'').trim().toLocaleLowerCase('pt-BR');const selected=new Set(selectedOSTireIds());
+            let items=q?osTireCandidates.filter(p=>[p.dot,p.fogo,p.marca,p.modelo,p.medida,p.tamanho].some(v=>String(v||'').toLocaleLowerCase('pt-BR').includes(q))):osTireCandidates.slice(0,10);
+            selected.forEach(id=>{const p=osTireCandidates.find(x=>String(x.id)===id);if(p&&!items.some(x=>String(x.id)===id))items.push(p);});
+            if(!items.length){host.innerHTML='<p class="text-sm text-slate-400">Nenhum pneu encontrado para essa busca.</p>';return;}
+            host.innerHTML=items.map(p=>{const pv=getTireVehicle(p);const loc=pv?`${pv.placa} · ${positionName(pv,p.posicao)||'sem posição'}`:'Em estoque';const checked=selected.has(String(p.id));const cls=pv?'bg-sky-50 border-sky-100':'bg-emerald-50 border-emerald-100';return `<label class="os-tire-card flex items-start gap-2 cursor-pointer ${cls}"><input class="os-tire-checkbox mt-1" type="checkbox" value="${p.id}" ${checked?'checked':''} onchange="renderOSSelectedTires()"><span class="min-w-0 flex-1"><span class="flex items-center justify-between gap-2"><strong class="text-sm text-slate-800">${escapeHtml(p.fogo)}</strong><span class="text-[10px] text-slate-500">${Number(p.sulco||0).toFixed(1)} mm</span></span><span class="block text-xs text-slate-600">${escapeHtml(p.marca||'Marca não informada')} · ${escapeHtml(p.modelo||'Modelo não informado')} · ${escapeHtml(p.medida||p.tamanho||'Tamanho não informado')}</span><span class="block text-[10px] text-slate-500">DOT: ${escapeHtml(p.dot||'Não informado')}</span><span class="block text-[10px] text-slate-500 mt-1">${escapeHtml(loc)}</span></span></label>`;}).join('');
+        }
+        function renderOSDynamicFields(){
+            const host=document.getElementById('os-tipo-campos-dinamicos');if(!host)return;const tipo=document.getElementById('os-tipo')?.value||'';let html='';
+            if(tipo==='Rodízio / troca de posição') html='<div class="md:col-span-2 text-sm font-semibold text-slate-700">Informe a nova posição de cada pneu selecionado na seção abaixo.</div>';
+            if(tipo==='Recapagem / reforma') html='<div><label class="soft-label">Fornecedor da recapagem *</label><input id="os-recapagem-fornecedor" required class="field-control" placeholder="Nome do fornecedor / reformadora"></div><div><label class="soft-label">Valor da recapagem (R$) *</label><input id="os-recapagem-valor" required type="number" min="0" step="0.01" class="field-control" placeholder="0,00"></div>';
+            if(tipo==='Sucateamento') html='<div class="md:col-span-2"><label class="soft-label">Motivo do sucateamento *</label><textarea id="os-sucateamento-motivo" required rows="2" class="field-control" placeholder="Informe o motivo da baixa do pneu"></textarea></div>';
+            host.innerHTML=html;host.classList.toggle('hidden',!html);
+        }
+        function renderOSSelectedTires() {
+            const host=document.getElementById('os-pneus-selecionados');if(!host)return;const ids=selectedOSTireIds();const vehicle=vehicleById(document.getElementById('os-veiculo')?.value);const tipo=document.getElementById('os-tipo')?.value||'';const slots=vehicle?getSlots(vehicle):[];const selected=ids.map(tireById).filter(Boolean);document.getElementById('os-selected-count').textContent=`${selected.length} selecionado${selected.length===1?'':'s'}`;
+            if(!selected.length){host.innerHTML='<p class="text-xs text-slate-400">Marque um ou mais pneus acima para configurar a ação.</p>';return;}
+            const canAssign=!['Remoção para estoque','Recapagem / reforma'].includes(tipo);const showSulco=tipo==='Inspeção de sulco';
+            host.innerHTML=selected.map(p=>{const currentV=getTireVehicle(p);const currentSlot=currentV&&vehicle&&String(currentV.id)===String(vehicle.id)?p.posicao:'';const options='<option value="">'+(canAssign?'Selecionar destino':'Sem destino / estoque')+'</option>'+slots.map(s=>`<option value="${s.key}" ${s.key===currentSlot?'selected':''}>${escapeHtml(s.label)}</option>`).join('');return `<div class="border border-slate-200 rounded-lg p-3 bg-slate-50"><div class="flex items-center justify-between gap-2 mb-2"><div><strong class="text-sm">${escapeHtml(p.fogo)}</strong><div class="text-[10px] text-slate-500">${escapeHtml(p.vida||'')}</div></div><span class="text-xs text-slate-600">${Number(p.sulco||0).toFixed(1)} mm</span></div>${canAssign?`<label class="soft-label">Nova posição${tipo==='Montagem / instalação'||tipo==='Rodízio / troca de posição'?' *':''}</label><select id="os-slot-${p.id}" class="field-control text-xs">${options}</select>`:`<div class="text-xs text-slate-500">Destino previsto: ${tipo==='Recapagem / reforma'?'Oficina de reforma':'Estoque'}</div>`}${showSulco?`<div class="mt-2"><label class="soft-label">Nova medição de sulco (mm)</label><input type="number" min="0" max="40" step="0.1" id="os-sulco-${p.id}" value="${Number(p.sulco||0)}" class="field-control"></div>`:''}</div>`;}).join('');
+        }
+        function handleSaveOrdem(e) {
+            e.preventDefault();const vehicle=vehicleById(document.getElementById('os-veiculo').value);if(!vehicle){alert('Cadastre ou selecione um veículo antes de gerar a OS.');return;}
+            const local=document.getElementById('os-local').value;const fornecedor=state.fornecedores.find(f=>String(f.id)===document.getElementById('os-fornecedor').value);const borracheiro=state.motoristas.find(m=>String(m.id)===document.getElementById('os-borracheiro').value);if(local==='Externo'&&!fornecedor){alert('Selecione o fornecedor do serviço externo.');return;}if(local==='Interno'&&!borracheiro){alert('Selecione o borracheiro/colaborador responsável pela oficina interna.');return;}
+            const tipo=document.getElementById('os-tipo').value;const kmField=document.getElementById('os-km');if(!kmField.value||Number(kmField.value)<0){alert('Informe o odômetro/horímetro para salvar a Ordem de Serviço.');kmField.focus();return;}const ids=selectedOSTireIds();const selected=ids.map(tireById).filter(Boolean);const valor=Number(document.getElementById('os-valor').value)||0;
+            if(!selected.length && tipo!=='Compra de pneus'){alert('Selecione pelo menos um pneu cadastrado para vincular à OS.');return;}
+            if(tipo==='Recapagem / reforma'&&(!document.getElementById('os-recapagem-fornecedor')?.value.trim()||document.getElementById('os-recapagem-valor')?.value==='')){alert('Informe o fornecedor e o valor da recapagem.');return;}if(tipo==='Sucateamento'&&!document.getElementById('os-sucateamento-motivo')?.value.trim()){alert('Informe o motivo do sucateamento.');return;}const targetSlots=[];if(['Montagem / instalação','Rodízio / troca de posição'].includes(tipo)){for(const p of selected){const el=document.getElementById(`os-slot-${p.id}`);const slot=el?.value||'';if(!slot){alert(`Selecione a posição de destino para o pneu ${p.fogo}.`);return;}targetSlots.push({p,slot});}if(new Set(targetSlots.map(x=>x.slot)).size!==targetSlots.length){alert('Dois pneus não podem ser destinados à mesma posição na mesma OS.');return;}}
+            // Não permitir sobrescrever um pneu que não faça parte da movimentação selecionada.
+            const chosenIds=new Set(selected.map(p=>String(p.id)));for(const item of targetSlots){const occupant=state.pneus.find(p=>String(p.id)!==String(item.p.id)&&getTireVehicle(p)?.id===vehicle.id&&p.posicao===item.slot);if(occupant&&!chosenIds.has(String(occupant.id))){alert(`A posição “${positionName(vehicle,item.slot)}” já está ocupada pelo pneu ${occupant.fogo}. Selecione-o também para permitir o rodízio, ou libere a posição antes.`);return;}}
+            let numero=document.getElementById('os-numero').value;if(state.ordens.some(o=>o.numero===numero)){numero=generateNextOSNumber();}
+            const driver=state.motoristas.find(m=>String(m.id)===document.getElementById('os-motorista').value);const order={id:Date.now(),numero,data:document.getElementById('os-data').value,veiculo:vehicle.placa,veiculoId:vehicle.id,veiculoModelo:vehicle.modelo,categoriaVeiculo:vehicle.categoria,anoModelo:vehicle.ano||'',motorista:driver?.nome||'',motoristaId:driver?.id||null,local,fornecedor:local==='Externo'?(fornecedor?.nome||''):'',fornecedorId:fornecedor?.id||null,borracheiro:local==='Interno'?(borracheiro?.nome||''):'',borracheiroId:borracheiro?.id||null,tipo,valor:tipo==='Recapagem / reforma'?Number(document.getElementById('os-recapagem-valor')?.value)||0:valor,fornecedorRecapagem:document.getElementById('os-recapagem-fornecedor')?.value.trim()||'',motivoSucateamento:document.getElementById('os-sucateamento-motivo')?.value.trim()||'',status:document.getElementById('os-status').value,obs:document.getElementById('os-obs').value,pneusIds:selected.map(p=>p.id),pneus:selected.map(p=>({id:p.id,fogo:p.fogo})),km:Number(document.getElementById('os-km').value)};
+            const fromOf=p=>{const pv=getTireVehicle(p);return pv?`${pv.placa} · ${positionName(pv,p.posicao)||'montado'}`:'Estoque';};
+            if(tipo==='Rodízio / troca de posição'||tipo==='Montagem / instalação'){
+                // Remove selected tyres from their current slots first so swaps are possible in one OS.
+                selected.forEach(p=>{p._oldLocation=fromOf(p);p.veiculo='Estoque';p.veiculoId=null;p.posicao='Estoque';p.status='Estoque';});
+                targetSlots.forEach(({p,slot})=>{p.veiculo=vehicle.placa;p.veiculoId=vehicle.id;p.posicao=slot;p.status='Em Uso';addTireHistory(p,tipo,p._oldLocation,`${vehicle.placa} · ${positionName(vehicle,slot)}`,`OS ${numero}`);delete p._oldLocation;});
+            } else if(tipo==='Remoção para estoque') {
+                selected.forEach(p=>{const from=fromOf(p);p.veiculo='Estoque';p.veiculoId=null;p.posicao='Estoque';p.status='Estoque';addTireHistory(p,tipo,from,'Estoque',`OS ${numero}`);});
+            } else if(tipo==='Recapagem / reforma') {
+                selected.forEach(p=>{const from=fromOf(p);p.veiculo='Estoque';p.veiculoId=null;p.posicao='Em reforma / fornecedor';p.status='Reforma';const match=String(p.vida||'').match(/(\d+)ª Vida/);const life=match?Number(match[1])+1:2;p.vida=`Encaminhado para recapagem (${life}ª vida prevista)`;addTireHistory(p,tipo,from,'Em reforma / fornecedor',`OS ${numero}; fornecedor ${order.fornecedorRecapagem}; valor ${money(order.valor)}`);});
+            } else if(tipo==='Sucateamento') {
+                selected.forEach(p=>{const from=fromOf(p);p.veiculo='Estoque';p.veiculoId=null;p.posicao='Sucateado';p.status='Baixado';addTireHistory(p,'Sucateamento',from,'Sucateado',`OS ${numero}; motivo: ${order.motivoSucateamento}`);});
+            } else if(tipo==='Retorno de reforma / liberação') {
+                selected.forEach(p=>{const from=`${getTireVehicle(p)?positionName(getTireVehicle(p),p.posicao):(p.posicao==='Em reforma / fornecedor'?'Em reforma / fornecedor':positionName(null,p.posicao))||'Em reforma'}${p.veiculo&&p.veiculo!=='Estoque'?' · '+p.veiculo:''}`;const match=String(p.vida||'').match(/(\d+)ª vida prevista/i);const life=match?Number(match[1]):2;p.veiculo='Estoque';p.veiculoId=null;p.posicao='Estoque';p.status='Estoque';p.vida=`Recapado (${life}ª Vida)`;addTireHistory(p,tipo,from,'Estoque',`OS ${numero}; pneu liberado após reforma`);});
+            } else if(tipo==='Inspeção de sulco') {
+                selected.forEach(p=>{const next=Number(document.getElementById(`os-sulco-${p.id}`)?.value);if(Number.isFinite(next)&&next>=0&&next<=40){p.sulco=next;addTireHistory(p,'Inspeção de sulco',fromOf(p),fromOf(p),`OS ${numero}; nova medição ${next} mm`);}});
+            } else if(tipo==='Compra de pneus') {
+                // A compra só fica registrada como custo da OS; cadastro/recebimento físico do pneu é feito no estoque.
+            } else {
+                selected.forEach(p=>addTireHistory(p,tipo,fromOf(p),fromOf(p),`OS ${numero}`));
+            }
+            if(selected.length&&valor>0){const share=valor/selected.length;selected.forEach(p=>{p.custoAcumulado=(Number(p.custoAcumulado)||0)+share;if(!Array.isArray(p.custos))p.custos=[];p.custos.push({data:order.data,valor:share,tipo,os:numero,veiculo:vehicle.placa});});}
+            state.ordens.unshift(order);state.osCounter=Math.max(Number(state.osCounter)||1001,Number((numero.match(/(\d+)$/)||[])[1])||1001)+1;
+            addAuditLog('Ordens de Serviço','Emissão',`${numero} · ${tipo} · ${money(valor)} · ${selected.length} pneu(s) · ${vehicle.placa}.`);
+            saveState();renderOrdens();renderPneus();updateDashboardMetrics();populateVehicleMapSelect();renderVehicleMap();populateDashboardFilters();renderAnalyticsDashboard();closeModal('modal-ordem');document.getElementById('form-ordem').reset();
+        }
+
+        // CADASTROS GERAIS
+        let pendingTireSlotKey = '';
+        function populatePneuPositionDropdown() {
+            const vehicleValue=document.getElementById('pneu-veiculo')?.value;
+            const position=document.getElementById('pneu-posicao'); if(!position)return;
+            const label=document.getElementById('pneu-posicao-label'); const mapButton=document.getElementById('pneu-escolher-posicao');
+            const vehicle=state.veiculos.find(v=>v.placa===vehicleValue);
+            const status=document.getElementById('pneu-status');
+            if(!vehicle){ position.innerHTML='<option value="Estoque">Estoque</option>';position.value='Estoque';if(label)label.value='Estoque';if(mapButton)mapButton.classList.add('hidden');
+                if(status){status.disabled=false;status.innerHTML='<option value="Estoque">Em Estoque</option><option value="Reforma">Em Reforma</option><option value="Sucateado">Sucateado (mantém no histórico)</option>';if(!['Estoque','Reforma','Sucateado'].includes(status.value))status.value='Estoque';} return; }
+            position.innerHTML='<option value="">Selecione no mapa</option>';position.value='';if(label)label.value='Selecione uma posição no mapa';if(mapButton)mapButton.classList.remove('hidden');
+            if(status){status.innerHTML='<option value="Em Uso">Em Uso</option>';status.value='Em Uso';status.disabled=true;}
+        }
+        function openTirePositionMap(){
+            const vehicle=state.veiculos.find(v=>v.placa===document.getElementById('pneu-veiculo')?.value);
+            if(!vehicle)return;
+            if(!Array.isArray(vehicle.eixos)||!vehicle.eixos.length){alert('Este veículo está sem configuração de eixos. Complete o cadastro do veículo antes de escolher uma posição.');return;}
+            pendingTireSlotKey='';const host=document.getElementById('pneu-mapa-posicoes');const slots=getSlots(vehicle);
+            if(!slots.length){alert('Este veículo não possui posições configuradas. Complete o cadastro de eixos e estepes.');return;}
+            document.getElementById('pneu-mapa-subtitulo').textContent=`${vehicle.placa} · Verde: livre · Vermelho: ocupada (pneu identificado pelo Nº de fogo)`;
+            host.innerHTML=slots.map(slot=>{const tire=tireAtSlot(vehicle,slot.key);const free=!tire;return `<button type="button" ${free?'':'disabled'} onclick="selectTireMapSlot('${slot.key}')" id="tire-slot-${slot.key}" class="text-left border rounded-lg p-3 ${free?'border-emerald-300 bg-emerald-50 hover:bg-emerald-100 cursor-pointer':'border-red-300 bg-red-50 opacity-90 cursor-not-allowed'}"><div class="flex items-center gap-2"><span class="inline-block w-3 h-3 rounded-full ${free?'bg-emerald-500':'bg-red-500'}"></span><strong class="text-sm ${free?'text-emerald-900':'text-red-900'}">${escapeHtml(slot.label)}</strong></div><p class="text-xs mt-1 ${free?'text-emerald-700':'text-red-700'}">${free?'POSIÇÃO LIVRE':`OCUPADA · Nº de fogo: ${escapeHtml(tire.fogo||'Não informado')}`}</p></button>`;}).join('');
+            document.getElementById('modal-mapa-posicao-pneu').classList.remove('hidden');
+        }
+        function selectTireMapSlot(key){pendingTireSlotKey=key;document.querySelectorAll('#pneu-mapa-posicoes button').forEach(b=>b.classList.remove('ring-2','ring-emerald-600'));document.getElementById('tire-slot-'+key)?.classList.add('ring-2','ring-emerald-600');}
+        function closeTirePositionMap(){document.getElementById('modal-mapa-posicao-pneu')?.classList.add('hidden');}
+        function confirmTirePositionMap(){if(!pendingTireSlotKey){alert('Selecione uma posição livre em verde.');return;}const vehicle=state.veiculos.find(v=>v.placa===document.getElementById('pneu-veiculo')?.value);if(!vehicle)return;if(tireAtSlot(vehicle,pendingTireSlotKey)){alert('Esta posição acabou de ser ocupada. Escolha outra posição livre.');openTirePositionMap();return;}const slot=getSlots(vehicle).find(s=>s.key===pendingTireSlotKey);document.getElementById('pneu-posicao').value=pendingTireSlotKey;document.getElementById('pneu-posicao-label').value=slot?.label||pendingTireSlotKey;closeTirePositionMap();}
+
+        function handleSavePneu(e) {
+            e.preventDefault();const fogo=document.getElementById('pneu-fogo').value.trim().toUpperCase();if(state.pneus.some(p=>p.fogo.toUpperCase()===fogo)){alert('Já existe um pneu com esse Nº de fogo/série.');return;}
+            const vehicleValue=document.getElementById('pneu-veiculo').value;const v=state.veiculos.find(x=>x.placa===vehicleValue);const statusField=document.getElementById('pneu-status');const selectedStatus=v?'Em Uso':statusField.value;const requestedPosition=document.getElementById('pneu-posicao').value;const mounted=!!v&&!!requestedPosition&&requestedPosition!=='Estoque';if(v&&!mounted){alert('Escolha uma posição livre no mapa antes de salvar o pneu.');return;}
+            const fornecedorId=document.getElementById('pneu-fornecedor').value;const fornecedor=state.fornecedores.find(f=>String(f.id)===fornecedorId);const sulcoAtual=Number(document.getElementById('pneu-sulco').value)||0;const sulcoInicialValue=document.getElementById('pneu-sulco-inicial').value;const pneu={id:Date.now()+Math.random(),internalId:'PNEU-'+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,7).toUpperCase(),fogo,medida:document.getElementById('pneu-medida').value.trim(),marca:document.getElementById('pneu-marca').value.trim(),modelo:document.getElementById('pneu-modelo').value.trim(),vida:document.getElementById('pneu-vida').value,grupo:document.getElementById('pneu-grupo').value,dataCompra:document.getElementById('pneu-data-compra').value,fornecedorId:fornecedor?fornecedor.id:null,fornecedor:fornecedor?fornecedor.nome:'',dot:document.getElementById('pneu-dot').value.trim(),sulcoInicial:sulcoInicialValue===''?sulcoAtual:Number(sulcoInicialValue),custoAquisicao:Number(document.getElementById('pneu-custo-aquisicao').value),custoAcumulado:0,veiculo:mounted?v.placa:'Estoque',veiculoId:mounted?v.id:null,posicao:mounted?requestedPosition:(selectedStatus==='Reforma'?'Em reforma / fornecedor':selectedStatus==='Sucateado'?'Sucateado':'Estoque'),sulco:sulcoAtual,status:selectedStatus,historico:[],custos:[],createdAt:new Date().toISOString()};
+            if(mounted){const occupied=state.pneus.some(p=>getTireVehicle(p)?.id===v.id&&p.posicao===pneu.posicao);if(occupied){alert('A posição indicada já contém um pneu. Escolha outra posição livre no mapa.');return;}}
+            if(getTireVehicle(pneu))addTireHistory(pneu,'Cadastro com veículo','Cadastro',`${v.placa} · ${pneu.posicao}`,'');else addTireHistory(pneu,pneu.status==='Sucateado'?'Sucateamento / descarte':'Entrada em estoque','Cadastro',pneu.status==='Reforma'?'Em reforma / fornecedor':pneu.status==='Sucateado'?'Sucateado':'Estoque',pneu.status==='Sucateado'?'Pneu descartado; registro mantido no histórico.':'Cadastro inicial');
+            state.pneus.push(pneu);addAuditLog('Pneus','Criação',`Pneu ${pneu.fogo} (${pneu.medida}) cadastrado.`);saveState();renderPneus();updateDashboardMetrics();renderVehicleMap();closeModal('modal-pneu');document.getElementById('form-pneu').reset();populatePneuPositionDropdown();
+        }
+        function handleSaveMotorista(e) {
+            e.preventDefault();const cpf=document.getElementById('motorista-cpf').value.trim();if(state.motoristas.some(m=>m.cpf===cpf)){alert('Já existe um cadastro com este CPF.');return;}
+            const motorista={id:Date.now(),nome:document.getElementById('motorista-nome').value.trim(),funcao:document.getElementById('motorista-funcao').value,cpf,cnh:document.getElementById('motorista-cnh').value,fone:document.getElementById('motorista-fone').value.trim()};state.motoristas.push(motorista);addAuditLog('Motoristas / Colaboradores','Criação',`${motorista.nome} (${motorista.funcao}) cadastrado.`);saveState();renderMotoristas();populateOSDropdowns();closeModal('modal-motorista');document.getElementById('form-motorista').reset();
+        }
+        function toggleMotoristaFields(){const func=document.getElementById('motorista-funcao')?.value;const cnh=document.getElementById('motorista-cnh-wrap');if(cnh)cnh.classList.toggle('opacity-50',func!=='Motorista');}
+        function handleSaveFornecedor(e) {
+            e.preventDefault();const doc=document.getElementById('fornecedor-cnpj').value.trim();if(state.fornecedores.some(f=>f.cnpj===doc)){alert('Já existe fornecedor com este CPF/CNPJ.');return;}
+            const f={id:Date.now(),nome:document.getElementById('fornecedor-nome').value.trim(),cnpj:doc,tipo:document.getElementById('fornecedor-tipo').value,fone:document.getElementById('fornecedor-fone').value.trim()};state.fornecedores.push(f);addAuditLog('Fornecedores','Criação',`${f.nome} cadastrado.`);saveState();renderFornecedores();populateOSDropdowns();closeModal('modal-fornecedor');document.getElementById('form-fornecedor').reset();
+        }
+        function handleSaveUsuario(e) {
+            e.preventDefault();const email=document.getElementById('user-email').value.trim().toLowerCase();if(state.usuarios.some(u=>u.email.toLowerCase()===email)){alert('Já existe um usuário com este e-mail.');return;}
+            const user={id:Date.now(),nome:document.getElementById('user-nome').value.trim(),email,perfil:document.getElementById('user-perfil').value,status:'Convite pendente',conviteEnviado:false,createdAt:new Date().toISOString()};state.usuarios.push(user);addAuditLog('Usuários','Convite preparado',`${user.nome} (${user.email}) registrado como pendente; envio real depende da integração Supabase Auth.`);saveState();renderUsuarios();closeModal('modal-usuario');document.getElementById('form-usuario').reset();alert('Usuário cadastrado como convite pendente. O e-mail de primeiro acesso será enviado quando o Supabase Auth estiver integrado.');
+        }
+
+        // TABELAS E DASHBOARD
+        function updateDashboardMetrics() {
+            const total=state.pneus.length;const emUso=state.pneus.filter(p=>getTireVehicle(p)||p.status==='Em Uso').length;const alerta=state.pneus.filter(p=>Number(p.sulco)>=1.6&&Number(p.sulco)<=3).length;const critico=state.pneus.filter(p=>Number(p.sulco)<1.6).length;const gastos=state.ordens.reduce((sum,o)=>sum+(Number(o.valor)||0),0);const estoque=state.pneus.filter(p=>!getTireVehicle(p)&&p.status==='Estoque').length;
+            const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};set('metric-total',total);set('metric-emuso',emUso);set('metric-alerta',alerta);set('metric-critico',critico);set('metric-gastos',money(gastos));set('metric-ordens',state.ordens.length);set('metric-estoque',estoque);
+        }
+        function renderPneus() {
+            const c=document.getElementById('table-pneus');if(!c)return;
+            const search=(document.getElementById('estoque-pneus-busca')?.value||'').trim().toLocaleLowerCase('pt-BR');
+            const norm=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR');
+            const filtered=state.pneus.filter(p=>p.status!=='Inativo'&&p.status!=='Sucateado'&&[p.fogo,p.marca,p.modelo,p.dot,p.medida].some(value=>norm(value).includes(norm(search))));
+            const total=filtered.length;
+            const valor=filtered.reduce((sum,p)=>sum+(Number(p.custoAquisicao)||0),0);
+            const gastos=filtered.reduce((sum,p)=>sum+(Number(p.custoAcumulado)||0),0);
+            const vidas=filtered.map(p=>{const initial=Number(p.sulcoInicial)||0;const current=Number(p.sulco)||0;return initial>0?Math.max(0,Math.min(100,current/initial*100)):0;});
+            const vidaMedia=vidas.length?vidas.reduce((a,b)=>a+b,0)/vidas.length:0;
+            const setMetric=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value;};
+            setMetric('estoque-metric-total',total);setMetric('estoque-metric-valor',money(valor));setMetric('estoque-metric-vida',`${vidaMedia.toLocaleString('pt-BR',{maximumFractionDigits:1})}%`);setMetric('estoque-metric-gastos',money(gastos));
+            if(!filtered.length){c.innerHTML=`<tr><td colspan="6" class="text-center py-6 text-slate-400">${state.pneus.length?'Nenhum pneu corresponde à busca.':'Nenhum pneu cadastrado no estoque/frota.'}</td></tr>`;return;}
+            c.innerHTML=filtered.map(p=>{const value=Number(p.sulco)||0;const badge=value<1.6?`<span class="px-2 py-0.5 bg-red-100 text-red-700 font-bold rounded text-xs">${value.toFixed(1)} mm (Crítico)</span>`:value<=3?`<span class="px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded text-xs">${value.toFixed(1)} mm (Alerta)</span>`:`<span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded text-xs">${value.toFixed(1)} mm (Bom)</span>`;const v=getTireVehicle(p);const stat=p.status==='Sucateado'?'<span class="px-2 py-0.5 bg-red-50 text-red-700 font-semibold text-xs rounded-full">Sucateado</span>':p.status==='Reforma'?'<span class="px-2 py-0.5 bg-purple-50 text-purple-700 font-semibold text-xs rounded-full">Em Reforma</span>':v?'<span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-semibold text-xs rounded-full">Em Uso</span>':'<span class="px-2 py-0.5 bg-slate-100 text-slate-700 font-semibold text-xs rounded-full">Estoque</span>';
+                const hasHistory=tireHasHistory(p);const admin=isAdminUser();return `<tr class="hover:bg-slate-50"><td class="p-3 font-bold text-slate-800">${escapeHtml(p.fogo)}<div class="text-[10px] text-slate-400 font-normal">${escapeHtml(p.vida||'')} · ${escapeHtml(p.grupo||'Sem grupo')}</div><div class="text-[9px] text-slate-400">ID interno: ${escapeHtml(p.internalId||p.id)}</div></td><td class="p-3">${escapeHtml(p.marca||'')} · ${escapeHtml(p.modelo||'')}<div class="text-[10px] text-slate-500 font-mono">${escapeHtml(p.medida)}${p.dot?` · DOT ${escapeHtml(p.dot)}`:''}</div></td><td class="p-3 text-slate-700 font-medium">${escapeHtml(v?v.placa:'Estoque')}<div class="text-[10px] text-slate-400 font-normal">${escapeHtml(v?positionName(v,p.posicao):p.posicao||'Estoque')}</div></td><td class="p-3">${badge}</td><td class="p-3">${stat}</td><td class="p-3 text-right whitespace-nowrap"><button onclick="editPneu(${JSON.stringify(String(p.id))})" title="Editar cadastro" class="text-blue-600 hover:text-blue-800 mr-2"><i class="fa-solid fa-pen-to-square"></i></button><button onclick="viewTireHistory(${JSON.stringify(String(p.id))})" title="Histórico" class="text-slate-400 hover:text-emerald-600 mr-2"><i class="fa-solid fa-clock-rotate-left"></i></button><button onclick="inactivatePneu(${JSON.stringify(String(p.id))})" title="Sucatear / inativar" class="text-amber-600 hover:text-amber-800 mr-2"><i class="fa-solid fa-ban"></i></button>${admin&&!hasHistory?`<button onclick="deletePneu(${JSON.stringify(String(p.id))})" title="Excluir definitivamente (somente administrador, sem histórico)" class="text-slate-400 hover:text-red-600"><i class="fa-solid fa-trash"></i></button>`:''}</td></tr>`;
+            }).join('');
+        }
+        function renderVeiculos() {
+            const c=document.getElementById('table-veiculos');if(!c)return;if(!state.veiculos.length){c.innerHTML='<tr><td colspan="7" class="text-center py-6 text-slate-400">Nenhum veículo cadastrado.</td></tr>';populateVehicleMapSelect();return;}
+            c.innerHTML=state.veiculos.map(v=>`<tr class="hover:bg-slate-50"><td class="p-3 font-semibold text-slate-700">${escapeHtml(v.prefixo||'-')}</td><td class="p-3 font-bold text-slate-800">${escapeHtml(v.placa)}</td><td class="p-3 font-medium">${escapeHtml(v.modelo)}<div class="text-[10px] text-slate-400">${escapeHtml(v.ano||'Ano não informado')}</div></td><td class="p-3"><span class="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 text-xs rounded-md">${escapeHtml(v.categoria)}</span><div class="text-[10px] text-slate-500 mt-1">${escapeHtml(v.configuracao||'')}</div></td><td class="p-3 font-mono text-xs text-slate-500">${escapeHtml(v.chassi||'-')}</td><td class="p-3 font-medium">${(Number(v.km)||0).toLocaleString('pt-BR')} ${/trator|máquina|colheitadeira|pá-carregadeira|retroescavadeira|empilhadeira/i.test(v.categoria)?'h':'KM'}<div class="text-[10px] text-emerald-700">${getMountedCount(v)} pneus${(Number.isFinite(Number(v.quantidadeEstepe))?Number(v.quantidadeEstepe):(v.temEstepe?1:0))>0?' + '+(Number.isFinite(Number(v.quantidadeEstepe))?Number(v.quantidadeEstepe):1)+' estepe(s)':''}</div></td><td class="p-3 text-right"><button onclick="editVeiculo('${v.id}')" title="Editar veículo" class="text-blue-600 hover:text-blue-800 mr-3"><i class="fa-solid fa-pen-to-square"></i></button><button onclick="selectVehicleMap('${v.id}')" title="Mapa de pneus" class="text-emerald-600 hover:text-emerald-800 mr-3"><i class="fa-solid fa-circle-dot"></i></button><button onclick="deleteVeiculo(${v.id})" title="Excluir" class="text-slate-400 hover:text-red-600"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('');populateVehicleMapSelect();
+        }
+        function selectVehicleMap(id){switchTab('cadastros',document.getElementById('nav-cadastros'));switchCadastroSubTab('mapa');const s=document.getElementById('mapa-veiculo-select');if(s)s.value=String(id);renderVehicleMap();}
+        function renderMotoristas() {
+            const c=document.getElementById('table-motoristas');if(!c)return;if(!state.motoristas.length){c.innerHTML='<tr><td colspan="5" class="text-center py-6 text-slate-400">Nenhum motorista/colaborador cadastrado.</td></tr>';return;}
+            c.innerHTML=state.motoristas.map(m=>`<tr class="hover:bg-slate-50"><td class="p-3 font-bold text-slate-800">${escapeHtml(m.nome)}<div class="text-[10px] text-slate-400">${escapeHtml(m.funcao||'Motorista')}</div></td><td class="p-3">${escapeHtml(m.cpf)}</td><td class="p-3"><span class="px-2 py-0.5 bg-blue-50 text-blue-700 font-medium text-xs rounded">${escapeHtml(m.cnh||'Não se aplica')}</span></td><td class="p-3">${escapeHtml(m.fone||'-')}</td><td class="p-3 text-right"><button onclick="deleteMotorista(${m.id})" class="text-slate-400 hover:text-red-600"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('');
+        }
+        function renderFornecedores() {
+            const c=document.getElementById('table-fornecedores');if(!c)return;if(!state.fornecedores.length){c.innerHTML='<tr><td colspan="5" class="text-center py-6 text-slate-400">Nenhum fornecedor cadastrado.</td></tr>';return;}
+            c.innerHTML=state.fornecedores.map(f=>`<tr class="hover:bg-slate-50"><td class="p-3 font-bold text-slate-800">${escapeHtml(f.nome)}</td><td class="p-3 font-mono text-xs">${escapeHtml(f.cnpj)}</td><td class="p-3"><span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-medium text-xs rounded">${escapeHtml(f.tipo)}</span></td><td class="p-3">${escapeHtml(f.fone||'-')}</td><td class="p-3 text-right"><button onclick="deleteFornecedor(${f.id})" class="text-slate-400 hover:text-red-600"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('');
+        }
+        function renderUsuarios() {
+            const c=document.getElementById('table-usuarios');if(!c)return;c.innerHTML=state.usuarios.map(u=>{const pending=(u.status||'').toLowerCase().includes('pendente');return `<tr class="hover:bg-slate-50"><td class="p-3 font-bold text-slate-800">${escapeHtml(u.nome)}</td><td class="p-3 text-slate-600">${escapeHtml(u.email)}</td><td class="p-3"><span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-semibold text-xs rounded">${escapeHtml(u.perfil)}</span></td><td class="p-3"><span class="px-2 py-0.5 ${pending?'bg-amber-100 text-amber-800':'bg-emerald-100 text-emerald-800'} font-semibold text-xs rounded-full">● ${escapeHtml(u.status||'Ativo')}</span>${pending?'<div class="text-[10px] text-amber-700 mt-1">E-mail depende do Supabase Auth</div>':''}</td><td class="p-3 text-right">${u.id!==1?`<button onclick="deleteUsuario(${u.id})" class="text-slate-400 hover:text-red-600"><i class="fa-solid fa-trash"></i></button>`:'<span class="text-xs text-slate-400 font-semibold">Principal</span>'}</td></tr>`;}).join('');
+        }
+        function renderOrdens() {
+            const c=document.getElementById('table-ordens');if(!c)return;if(!state.ordens.length){c.innerHTML='<tr><td colspan="7" class="text-center py-6 text-slate-400">Nenhuma Ordem de Serviço emitida.</td></tr>';return;}
+            c.innerHTML=state.ordens.map(o=>`<tr class="hover:bg-slate-50"><td class="p-3 font-bold text-emerald-700">${escapeHtml(o.numero)}<div class="text-[10px] text-slate-400">${escapeHtml(o.status||'Concluída')}</div></td><td class="p-3 whitespace-nowrap">${escapeHtml(formatDate(o.data))}</td><td class="p-3 font-semibold">${escapeHtml(o.veiculo)}<div class="text-[10px] text-slate-400">${escapeHtml(o.motorista||'Motorista não informado')}</div></td><td class="p-3">${escapeHtml(o.local==='Interno'?`Interno: ${o.borracheiro||'-'}`:(o.fornecedor||'-'))}</td><td class="p-3"><span class="px-2 py-1 bg-slate-100 text-slate-700 text-xs rounded-md font-medium">${escapeHtml(o.tipo)}</span><div class="text-[10px] text-slate-400 mt-1">${(o.pneusIds||[]).length} pneu(s)</div></td><td class="p-3 font-bold text-slate-800">${money(o.valor)}</td><td class="p-3 text-right"><button onclick="viewOrderDetails(${o.id})" title="Detalhes" class="text-emerald-600 hover:text-emerald-800 mr-2"><i class="fa-solid fa-eye"></i></button><button onclick="printOrder(${o.id})" title="Imprimir OS" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-print"></i></button></td></tr>`).join('');
+        }
+        function renderAuditoria() {
+            const c=document.getElementById('table-auditoria');if(!c)return;if(!state.auditoria.length){c.innerHTML='<tr><td colspan="5" class="text-center py-6 text-slate-400">Sem registros na trilha de auditoria.</td></tr>';return;}
+            c.innerHTML=state.auditoria.map(a=>`<tr class="hover:bg-slate-50 border-b border-slate-100"><td class="p-3 text-slate-500 whitespace-nowrap">${escapeHtml(a.time)}</td><td class="p-3 font-bold text-slate-700">${escapeHtml(a.usuario)}</td><td class="p-3"><span class="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded">${escapeHtml(a.modulo)}</span></td><td class="p-3 font-semibold text-emerald-600">${escapeHtml(a.acao)}</td><td class="p-3 text-slate-600">${escapeHtml(a.detalhes)}</td></tr>`).join('');
+        }
+        function populateDashboardFilters() {
+            const yearEl=document.getElementById('dashboard-filter-year'),catEl=document.getElementById('dashboard-filter-categoria'),vehEl=document.getElementById('dashboard-filter-veiculo');if(!yearEl||!catEl||!vehEl)return;
+            const preserve={year:yearEl.value,cat:catEl.value,veh:vehEl.value};const years=[...new Set(state.ordens.map(o=>(o.data||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort().reverse();yearEl.innerHTML='<option value="todos">Todos</option>'+years.map(y=>`<option value="${y}">${y}</option>`).join('');if(years.includes(preserve.year))yearEl.value=preserve.year;
+            const cats=[...new Set(state.ordens.map(o=>o.categoriaVeiculo||state.veiculos.find(v=>v.placa===o.veiculo)?.categoria).filter(Boolean))].sort();catEl.innerHTML='<option value="todos">Todas</option>'+cats.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');if(cats.includes(preserve.cat))catEl.value=preserve.cat;
+            const vehs=[...new Set(state.ordens.map(o=>o.veiculo).filter(Boolean))].sort();vehEl.innerHTML='<option value="todos">Todos</option>'+vehs.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');if(vehs.includes(preserve.veh))vehEl.value=preserve.veh;
+        }
+        function renderChart(id,type,labels,data,label) {
+            const canvas=document.getElementById(id);if(!canvas||typeof Chart==='undefined')return;if(chartInstances[id])chartInstances[id].destroy();
+            chartInstances[id]=new Chart(canvas,{type,data:{labels,datasets:[{label,data,backgroundColor:type==='line'?'rgba(16,185,129,.16)':undefined,borderColor:'#10b981',borderWidth:2,pointBackgroundColor:'#059669',fill:type==='line',tension:.28,backgroundColor:type==='bar'?['#10b981','#0f766e','#34d399','#64748b','#f59e0b','#ef4444','#6366f1','#14b8a6']:undefined}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:type==='doughnut'||type==='pie',position:'bottom'}},scales:(type==='doughnut'||type==='pie')?{}:{y:{beginAtZero:true,ticks:{callback:v=>'R$ '+Number(v).toLocaleString('pt-BR')}}}}});
+        }
+        function renderAnalyticsDashboard() {
+            if(typeof Chart==='undefined')return;
+            const y=document.getElementById('dashboard-filter-year')?.value||'todos',cat=document.getElementById('dashboard-filter-categoria')?.value||'todos',veh=document.getElementById('dashboard-filter-veiculo')?.value||'todos';
+            const start=document.getElementById('dashboard-data-inicio')?.value||'',end=document.getElementById('dashboard-data-fim')?.value||'';
+            const inPeriod=value=>{const d=String(value||'').slice(0,10);return (!start||d>=start)&&(!end||d<=end);};
+            const orders=state.ordens.filter(o=>inPeriod(o.data)&&(y==='todos'||(o.data||'').slice(0,4)===y)&&(cat==='todos'||(o.categoriaVeiculo||state.veiculos.find(v=>v.placa===o.veiculo)?.categoria)===cat)&&(veh==='todos'||o.veiculo===veh));
+            const by=(items,key,amount=o=>Number(o.valor)||0)=>items.reduce((acc,o)=>{const k=key(o)||'Não informado';acc[k]=(acc[k]||0)+amount(o);return acc;},{});
+            const monthMap=by(orders,o=>(o.data||'').slice(0,7));const months=Object.keys(monthMap).sort();renderChart('chart-custos-mes','line',months.map(m=>{const [yy,mm]=m.split('-');return `${mm}/${yy}`;}),months.map(m=>monthMap[m]),'Gastos (R$)');
+            const catMap=by(orders,o=>o.categoriaVeiculo||state.veiculos.find(v=>v.placa===o.veiculo)?.categoria);const catEntries=Object.entries(catMap).sort((a,b)=>b[1]-a[1]);renderChart('chart-custos-categoria','bar',catEntries.map(x=>x[0]),catEntries.map(x=>x[1]),'Gastos (R$)');
+            const vehMap=by(orders,o=>`${o.veiculo}${o.veiculoModelo?' · '+o.veiculoModelo:''}`);const vehEntries=Object.entries(vehMap).sort((a,b)=>b[1]-a[1]).slice(0,10);renderChart('chart-custos-veiculo','bar',vehEntries.map(x=>x[0]),vehEntries.map(x=>x[1]),'Gastos (R$)');
+            const modelMap=by(orders,o=>`${o.veiculoModelo||state.veiculos.find(v=>v.placa===o.veiculo)?.modelo||'Modelo não informado'}${o.anoModelo?' · '+o.anoModelo:''}`);const modelEntries=Object.entries(modelMap).sort((a,b)=>b[1]-a[1]).slice(0,12);renderChart('chart-custos-modelo','bar',modelEntries.map(x=>x[0]),modelEntries.map(x=>x[1]),'Gastos (R$)');
+            const passesFiltersForTire=p=>{const pv=getTireVehicle(p);const pCategory=pv?.categoria||'';const createdYear=(p.createdAt||'').slice(0,4);return inPeriod(p.createdAt||p.dataCompra)&&(y==='todos'||createdYear===y)&&(cat==='todos'||pCategory===cat)&&(veh==='todos'||pv?.placa===veh);};
+            const groupMap={};state.pneus.filter(passesFiltersForTire).forEach(p=>{const g=p.grupo||'Sem grupo';groupMap[g]=(groupMap[g]||0)+(Number(p.custoAquisicao)||0);});
+            orders.forEach(o=>{const share=(Number(o.valor)||0)/Math.max(1,(o.pneusIds||[]).length);(o.pneusIds||[]).forEach(id=>{const p=tireById(id);const group=p?.grupo||'Sem grupo';groupMap[group]=(groupMap[group]||0)+share;});if(!(o.pneusIds||[]).length)groupMap['OS sem pneu vinculado']=(groupMap['OS sem pneu vinculado']||0)+(Number(o.valor)||0);});const groupEntries=Object.entries(groupMap).sort((a,b)=>b[1]-a[1]);renderChart('chart-custos-grupo','doughnut',groupEntries.map(x=>x[0]),groupEntries.map(x=>x[1]),'Custos (R$)');
+            const tireMap={};state.pneus.filter(passesFiltersForTire).forEach(p=>{const key=`${p.fogo} · ${p.modelo}`;tireMap[key]=(tireMap[key]||0)+(Number(p.custoAquisicao)||0);});orders.forEach(o=>{const each=(Number(o.valor)||0)/Math.max(1,(o.pneusIds||[]).length);(o.pneusIds||[]).forEach(id=>{const p=tireById(id);const key=p?`${p.fogo} · ${p.modelo}`:`Pneu ${id}`;tireMap[key]=(tireMap[key]||0)+each;});});const tireEntries=Object.entries(tireMap).sort((a,b)=>b[1]-a[1]).slice(0,12);renderChart('chart-custos-pneu','bar',tireEntries.map(x=>x[0]),tireEntries.map(x=>x[1]),'Custos (R$)');
+            renderCostActivity(inPeriod);
+        }
+        function renderCostActivity(inPeriod){
+            const host=document.getElementById('dashboard-atividade');if(!host)return;
+            const events=[];
+            state.ordens.forEach(o=>{if(inPeriod(o.data))events.push({date:String(o.data||'').slice(0,10),title:`OS ${o.numero||''} · ${o.tipo||'Serviço'}`,detail:`Veículo: ${o.veiculo||'Não informado'} · Motorista: ${o.motorista||'Não informado'} · Status: ${o.status||'Não informado'}`,value:Number(o.valor)||0});});
+            state.pneus.forEach(p=>{if(inPeriod(p.createdAt||p.dataCompra))events.push({date:String(p.createdAt||p.dataCompra||'').slice(0,10),title:`Cadastro do pneu ${p.fogo||''}`,detail:`${p.marca||''} ${p.modelo||''} · ${p.medida||'Medida não informada'} · ${p.status||'Status não informado'}`,value:Number(p.custoAquisicao)||0});(p.historico||[]).forEach(h=>{if(inPeriod(h.data))events.push({date:String(h.data||'').slice(0,10),title:`${h.acao||'Movimentação'} · Pneu ${p.fogo||''}`,detail:`${h.de||'-'} → ${h.para||'-'}${h.detalhes?' · '+h.detalhes:''}`,value:0});});});
+            state.auditoria.forEach(a=>{const raw=String(a.time||'');const iso=raw.slice(0,10);if(/^\d{4}-\d{2}-\d{2}$/.test(iso)&&inPeriod(iso))events.push({date:iso,title:`${a.modulo||'Sistema'} · ${a.acao||'Registro'}`,detail:`${a.detalhes||''} · Usuário: ${a.usuario||'Não informado'}`,value:0});});
+            events.sort((a,b)=>b.date.localeCompare(a.date));
+            const count=document.getElementById('dashboard-atividade-contagem');if(count)count.textContent=`${events.length} registro(s)`;
+            if(!events.length){host.innerHTML='<p class="text-sm text-slate-400">Nenhum registro encontrado neste período.</p>';return;}
+            host.innerHTML=events.slice(0,250).map(e=>`<div class="rounded-lg border border-slate-100 p-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2"><div><div class="text-xs text-slate-400">${escapeHtml(e.date||'Data não informada')}</div><div class="text-sm font-semibold text-slate-700">${escapeHtml(e.title)}</div><div class="text-xs text-slate-500 mt-1">${escapeHtml(e.detail)}</div></div>${e.value?`<div class="text-sm font-bold text-slate-700 whitespace-nowrap">${money(e.value)}</div>`:''}</div>`).join('')+(events.length>250?`<p class="text-xs text-slate-500">Exibindo os primeiros 250 de ${events.length} registros.</p>`:'');
+        }
+        function searchCostRegistrations(){
+            const input=document.getElementById('dashboard-busca-cadastros'),host=document.getElementById('dashboard-resultados-busca');if(!input||!host)return;const q=input.value.trim().toLocaleLowerCase('pt-BR');if(!q){host.innerHTML='<p class="text-sm text-slate-400">Digite marca, modelo, ano, prefixo, nome, CPF, telefone, CNPJ, produto ou serviço.</p>';return;}
+            const norm=v=>String(v??'').toLocaleLowerCase('pt-BR');const results=[];
+            state.veiculos.forEach(v=>{const fields=[v.marca,v.modelo,v.ano,v.anoModelo,v.prefixo,v.placa,v.categoria,v.chassi,v.configuracao,v.renavam].map(norm);if(fields.some(x=>x.includes(q)))results.push({kind:'Veículo',name:`${v.prefixo||v.placa||'Veículo'} · ${v.modelo||''}`,detail:`Placa: ${v.placa||'-'} · Marca: ${v.marca||'Não informada'} · Modelo: ${v.modelo||'-'} · Ano: ${v.ano||v.anoModelo||'-'} · Categoria: ${v.categoria||'-'}`});});
+            state.motoristas.forEach(m=>{const fields=[m.nome,m.cpf,m.fone,m.telefone,m.funcao,m.cnh].map(norm);if(fields.some(x=>x.includes(q)))results.push({kind:'Motorista',name:m.nome||'Motorista',detail:`CPF: ${m.cpf||'-'} · Telefone: ${m.fone||m.telefone||'-'} · Função: ${m.funcao||'-'} · CNH: ${m.cnh||'-'}`});});
+            state.fornecedores.forEach(f=>{const extra=[...(Array.isArray(f.produtos)?f.produtos:[]),...(Array.isArray(f.servicos)?f.servicos:[]),f.produtos,f.servicos,f.descricao,f.observacoes].flat().join(' ');const fields=[f.nome,f.cnpj,f.tipo,f.fone,f.telefone,extra].map(norm);if(fields.some(x=>x.includes(q)))results.push({kind:'Fornecedor',name:f.nome||'Fornecedor',detail:`CNPJ: ${f.cnpj||'-'} · Telefone: ${f.fone||f.telefone||'-'} · Tipo/produtos/serviços: ${[f.tipo,extra].filter(Boolean).join(' · ')||'-'}`});});
+            host.innerHTML=results.length?results.map(r=>`<div class="rounded-lg border border-slate-100 p-3"><div class="flex flex-wrap items-center gap-2"><span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-xs font-semibold">${escapeHtml(r.kind)}</span><span class="text-sm font-semibold text-slate-700">${escapeHtml(r.name)}</span></div><p class="text-xs text-slate-500 mt-1">${escapeHtml(r.detail)}</p></div>`).join(''):'<p class="text-sm text-slate-400">Nenhum cadastro encontrado para essa busca.</p>';
+        }
+        function viewTireHistory(id) {const p=tireById(id);if(!p)return;const items=(p.historico||[]).slice(0,30).map(h=>`${formatDate(h.data)} | ${h.acao} | ${h.de||'-'} → ${h.para||'-'}${h.detalhes?' | '+h.detalhes:''}`).join('\n');alert(`Histórico do pneu ${p.fogo}\n\n${items||'Sem movimentações registradas.'}`);}
+        function viewOrderDetails(id) {const o=state.ordens.find(x=>x.id===id);if(!o)return;const tireLines=(o.pneus||[]).map(p=>`${p.fogo} (ID ${p.id})`).join('\n')||'Nenhum pneu vinculado';alert(`ORDEM ${o.numero}\nData: ${formatDate(o.data)}\nVeículo: ${o.veiculo} — ${o.veiculoModelo||''}\nMotorista: ${o.motorista||'-'}\nLocal: ${o.local}\nResponsável: ${o.local==='Interno'?o.borracheiro:o.fornecedor}\nServiço: ${o.tipo}\nStatus: ${o.status}\nValor: ${money(o.valor)}\nPneus:\n${tireLines}\n\nObservações: ${o.obs||'-'}`);}
+        function printOrder(id) {const o=state.ordens.find(x=>x.id===id);if(!o)return;const w=window.open('','_blank','width=900,height=700');if(!w){alert('Permita pop-ups para imprimir a OS.');return;}w.document.write(`<html><head><title>${escapeHtml(o.numero)}</title><style>body{font-family:Arial;padding:32px;color:#111}h1{font-size:22px}table{border-collapse:collapse;width:100%;margin-top:20px}td,th{border:1px solid #ddd;padding:9px;text-align:left}.muted{color:#666}</style></head><body><h1>LK Pneus · ORDEM DE SERVIÇO ${escapeHtml(o.numero)}</h1><p>Data: ${escapeHtml(formatDate(o.data))} | Status: ${escapeHtml(o.status)}</p><p>Veículo: ${escapeHtml(o.veiculo)} — ${escapeHtml(o.veiculoModelo||'')} | Categoria: ${escapeHtml(o.categoriaVeiculo||'')}</p><p>Motorista: ${escapeHtml(o.motorista||'-')} | Local: ${escapeHtml(o.local)} | Responsável: ${escapeHtml(o.local==='Interno'?o.borracheiro:o.fornecedor)}</p><p>Serviço: ${escapeHtml(o.tipo)} | Valor: ${money(o.valor)}</p><table><tr><th>Pneus</th><th>Observações</th></tr><tr><td>${(o.pneus||[]).map(p=>escapeHtml(p.fogo)).join(', ')||'Nenhum'}</td><td>${escapeHtml(o.obs||'-')}</td></tr></table><p class="muted">Documento gerado localmente pelo LK Pneus.</p><script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close();}
+        function clearAuditLog(){if(!confirm('Deseja apagar a trilha de auditoria local?'))return;state.auditoria=[];addAuditLog('Auditoria','Limpeza','Trilha de auditoria reiniciada pelo usuário atual.');renderAuditoria();}
+        function isAdminUser(){const user=state.usuarios.find(u=>String(u.nome||u.email)===String(currentUser));return /admin|administrador/i.test(String(user?.perfil||''))||/admin/i.test(String(currentUser||''));}
+        function tireHasHistory(p){return !!((p.historico||[]).length||(p.custos||[]).length||state.movimentacoes.some(m=>String(m.pneuId)===String(p.id))||state.ordens.some(o=>(o.pneusIds||[]).some(id=>String(id)===String(p.id))||(o.pneus||[]).some(x=>String(x.id)===String(p.id))));}
+        function editPneu(id){const p=tireById(id);if(!p)return;document.getElementById('form-editar-pneu').reset();document.getElementById('editar-pneu-id-interno').value=String(p.id);document.getElementById('editar-pneu-id').textContent=`ID interno: ${p.internalId||p.id} · O histórico permanece vinculado a este identificador.`;document.getElementById('editar-pneu-fogo').value=p.fogo||'';document.getElementById('editar-pneu-medida').value=p.medida||'';document.getElementById('editar-pneu-marca').value=p.marca||'';document.getElementById('editar-pneu-modelo').value=p.modelo||'';document.getElementById('editar-pneu-dot').value=p.dot||'';document.getElementById('editar-pneu-vida').value=p.vida||'Novo (1ª Vida)';document.getElementById('editar-pneu-grupo').value=p.grupo||'Outro';document.getElementById('editar-pneu-custo').value=Number(p.custoAquisicao)||0;document.getElementById('editar-pneu-data-compra').value=p.dataCompra||'';const sel=document.getElementById('editar-pneu-fornecedor');sel.innerHTML='<option value="">Não informado</option>'+state.fornecedores.map(f=>`<option value="${escapeHtml(String(f.id))}">${escapeHtml(f.nome||'Fornecedor')}</option>`).join('');sel.value=p.fornecedorId==null?'':String(p.fornecedorId);const v=getTireVehicle(p);document.getElementById('editar-pneu-veiculo').textContent=`${v?v.placa:'Estoque'} · ${v?positionName(v,p.posicao):p.posicao||'Estoque'}`;document.getElementById('editar-pneu-status').textContent=`${p.status|| (v?'Em Uso':'Estoque')} · Sulco atual: ${p.sulco??'-'} mm · Recapagens: ${p.recapagens??p.quantidadeRecapagens??0}`;document.getElementById('modal-editar-pneu').classList.remove('hidden');}
+        function saveEditedTire(e){e.preventDefault();const id=document.getElementById('editar-pneu-id-interno').value,p=tireById(id);if(!p)return;const val=x=>document.getElementById(x).value.trim();const next={fogo:val('editar-pneu-fogo').toUpperCase(),medida:val('editar-pneu-medida'),marca:val('editar-pneu-marca'),modelo:val('editar-pneu-modelo'),dot:val('editar-pneu-dot').toUpperCase(),vida:document.getElementById('editar-pneu-vida').value,grupo:document.getElementById('editar-pneu-grupo').value,custoAquisicao:Number(document.getElementById('editar-pneu-custo').value),dataCompra:document.getElementById('editar-pneu-data-compra').value,fornecedorId:document.getElementById('editar-pneu-fornecedor').value||null};if(!next.fogo||!next.medida||!next.marca||!next.modelo||!Number.isFinite(next.custoAquisicao)||next.custoAquisicao<0){alert('Preencha os campos obrigatórios com valores válidos.');return;}if(state.pneus.some(x=>String(x.id)!==String(p.id)&&String(x.fogo||'').trim().toUpperCase()===next.fogo)){alert('Já existe outro pneu com este Nº de fogo. Os números de fogo não podem se repetir.');return;}const fogoChanged=next.fogo!==String(p.fogo||'').toUpperCase(),costChanged=next.custoAquisicao!==Number(p.custoAquisicao||0);const reasonFogo=val('editar-pneu-motivo-fogo'),reasonCost=val('editar-pneu-motivo-custo'),reasonGeneral=val('editar-pneu-motivo-geral');if(fogoChanged&&!reasonFogo){alert('Informe o motivo da alteração do Nº de fogo.');return;}if(costChanged&&!reasonCost){alert('Informe o motivo da alteração do custo, pois isso altera o custo por km.');return;}const changes=[];const labels={fogo:'Nº de fogo',medida:'Medida',marca:'Marca',modelo:'Modelo',dot:'DOT',vida:'Vida',grupo:'Grupo/aplicação',custoAquisicao:'Custo inicial',dataCompra:'Data da compra',fornecedorId:'Fornecedor'};for(const key of Object.keys(next)){let before=p[key]??'';let after=next[key]??'';if(key==='fornecedorId'){before=String(before||'');after=String(after||'');}if(String(before)!==String(after)){if(!['fogo','custoAquisicao'].includes(key)&&!reasonGeneral){alert('Informe o motivo geral da edição.');return;}const oldDisplay=key==='fornecedorId'?(state.fornecedores.find(f=>String(f.id)===String(before))?.nome||before||'Não informado'):String(before||'Não informado');const newDisplay=key==='fornecedorId'?(state.fornecedores.find(f=>String(f.id)===String(after))?.nome||after||'Não informado'):String(after||'Não informado');changes.push({key,label:labels[key],before:oldDisplay,after:newDisplay,reason:key==='fogo'?reasonFogo:key==='custoAquisicao'?reasonCost:reasonGeneral});}}if(!changes.length){closeModal('modal-editar-pneu');return;}const fornecedor=state.fornecedores.find(f=>String(f.id)===String(next.fornecedorId));Object.assign(p,next,{fornecedor:fornecedor?.nome||''});changes.forEach(ch=>addAuditLog('Pneus','Edição de campo',`Pneu ID ${p.internalId||p.id} · ${ch.label}: “${ch.before}” → “${ch.after}” · Motivo: ${ch.reason||'Não informado'}`));addAuditLog('Pneus','Edição concluída',`Pneu ID ${p.internalId||p.id} (${p.fogo}) atualizado em ${changes.length} campo(s).`);saveState();renderPneus();updateDashboardMetrics();renderVehicleMap();renderAnalyticsDashboard();closeModal('modal-editar-pneu');}
+        function inactivatePneu(id){const p=tireById(id);if(!p)return;const reason=prompt(`Informe o motivo para sucatear/inativar o pneu ${p.fogo}:`);if(!reason||!reason.trim()){alert('É obrigatório informar o motivo.');return;}const v=getTireVehicle(p);const old=p.status||'Estoque';const from=v?`${v.placa} · ${positionName(v,p.posicao)}`:(p.posicao||old);p.status='Inativo';p.veiculo='Estoque';p.veiculoId=null;p.posicao='Inativo';p.inativoEm=new Date().toISOString();p.inativoPor=currentUser;p.motivoInativacao=reason.trim();addTireHistory(p,'Sucateamento / inativação',from,'Inativo',reason.trim());addAuditLog('Pneus','Sucateamento / inativação',`Pneu ID ${p.internalId||p.id} · Nº de fogo ${p.fogo} · Status: ${old} → Inativo · Local anterior: ${from} · Motivo: ${reason.trim()}`);saveState();renderPneus();updateDashboardMetrics();renderVehicleMap();renderAnalyticsDashboard();}
+        function deletePneu(id){const p=tireById(id);if(!p)return;if(!isAdminUser()){alert('Somente um administrador pode excluir definitivamente um pneu.');return;}if(tireHasHistory(p)){alert('Este pneu possui histórico. Não é permitido excluir definitivamente; use Sucatear / inativar para preservar os registros.');return;}if(!confirm(`Excluir definitivamente o pneu ${p.fogo}? Esta ação só é permitida para cadastro sem histórico.`))return;state.pneus=state.pneus.filter(x=>String(x.id)!==String(id));addAuditLog('Pneus','Exclusão definitiva',`Pneu ID ${p.internalId||p.id} · ${p.fogo} removido sem histórico.`);renderPneus();updateDashboardMetrics();renderVehicleMap();renderAnalyticsDashboard();}
+        function deleteVeiculo(id){const v=vehicleById(id);if(!v)return;if(state.pneus.some(p=>getTireVehicle(p)?.id===v.id)){if(!confirm('Há pneus vinculados a este veículo. Excluir mesmo assim? Os pneus serão enviados para estoque.'))return;state.pneus.filter(p=>getTireVehicle(p)?.id===v.id).forEach(p=>{const from=`${v.placa} · ${p.posicao}`;p.veiculo='Estoque';p.veiculoId=null;p.posicao='Estoque';p.status='Estoque';addTireHistory(p,'Transferência por exclusão de veículo',from,'Estoque','');});}state.veiculos=state.veiculos.filter(x=>x.id!==id);addAuditLog('Veículos','Exclusão',`Veículo ${v.placa} removido.`);renderVeiculos();populateOSDropdowns();renderVehicleMap();}
+        function deleteMotorista(id){const m=state.motoristas.find(x=>x.id===id);if(!m)return;if(!confirm(`Excluir cadastro de ${m.nome}?`))return;state.motoristas=state.motoristas.filter(x=>x.id!==id);addAuditLog('Motoristas','Exclusão',`${m.nome} removido.`);renderMotoristas();populateOSDropdowns();}
+        function deleteFornecedor(id){const f=state.fornecedores.find(x=>x.id===id);if(!f)return;if(!confirm(`Excluir fornecedor ${f.nome}?`))return;state.fornecedores=state.fornecedores.filter(x=>x.id!==id);addAuditLog('Fornecedores','Exclusão',`${f.nome} removido.`);renderFornecedores();populateOSDropdowns();}
+        function deleteUsuario(id){const u=state.usuarios.find(x=>x.id===id);if(!u)return;if(!confirm(`Excluir usuário ${u.email}?`))return;state.usuarios=state.usuarios.filter(x=>x.id!==id);addAuditLog('Usuários','Exclusão',`${u.email} removido do cadastro local.`);renderUsuarios();}
+
+        function removeTestVehicleAndTires() {
+            const testVehicleIds = new Set(
+                state.veiculos
+                    .filter(v => String(v.placa || '').trim().toUpperCase() === 'TST-OA00' || String(v.prefixo || '').trim().toUpperCase() === 'TESTE - 01')
+                    .map(v => String(v.id))
+            );
+            testVehicleIds.add('9001001');
+
+            state.pneus = state.pneus.filter(p => {
+                const fogo = String(p.fogo || '').trim().toUpperCase();
+                const id = String(p.id ?? '');
+                const internalId = String(p.internalId || '').trim().toUpperCase();
+                const linkedToTestVehicle = testVehicleIds.has(String(p.veiculoId)) || String(p.veiculo || '').trim().toUpperCase() === 'TST-OA00';
+                const seededTestId = /^900110[1-5]$/.test(id) || /^PNEU-900110[1-5]$/.test(internalId);
+                return !(linkedToTestVehicle || seededTestId);
+            });
+            state.veiculos = state.veiculos.filter(v =>
+                String(v.placa || '').trim().toUpperCase() !== 'TST-OA00' &&
+                String(v.prefixo || '').trim().toUpperCase() !== 'TESTE - 01' &&
+                String(v.id) !== '9001001'
+            );
+            delete state.testDataSeeded;
+        }
+
+        window.addEventListener('load',()=>{
+            loadState();removeTestVehicleAndTires();saveState();renderVeiculos();renderMotoristas();renderFornecedores();renderUsuarios();renderOrdens();renderPneus();updateDashboardMetrics();renderAuditoria();populateOSDropdowns();populateVehicleMapSelect();populateDashboardFilters();
+            if(!state.auditoria.some(a=>a.acao==='Acesso'))addAuditLog('Sistema','Acesso','Sessão do LK Pneus iniciada no protótipo local.');else renderAuditoria();
+            applyVehiclePreset();renderAnalyticsDashboard();saveState();
+        });
+    </script>
+</body>
+</html>
