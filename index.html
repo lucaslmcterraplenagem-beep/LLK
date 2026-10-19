@@ -1485,7 +1485,7 @@
             button.disabled = true;
             button.textContent = 'Criando conta...';
             try {
-                const { data, error } = await sb.auth.signUp({ email, password });
+                const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: 'https://lk-pneus.netlify.app' } });
                 if (error) throw error;
                 if (data?.session && data?.user) {
                     await enterAuthenticatedApp(data.user);
