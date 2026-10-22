@@ -1,3 +1,18 @@
+function switchTab(tabId, element) {
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+    const targetTab = document.getElementById('tab-' + tabId);
+    if (targetTab) targetTab.classList.remove('hidden');
+
+    document.querySelectorAll('.nav-item').forEach(nav => {
+        nav.classList.remove('bg-slate-800', 'text-white');
+        nav.classList.add('text-slate-300');
+    });
+
+    if (element) {
+        element.classList.add('bg-slate-800', 'text-white');
+        element.classList.remove('text-slate-300');
+    }
+}
 // Módulo do Dashboard e Métricas da Frota
 function updateDashboardMetrics() {
     const total = state.pneus.length;
