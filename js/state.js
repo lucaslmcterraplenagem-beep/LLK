@@ -1,3 +1,8 @@
+// --- CONEXÃO COM O SUPABASE (LK PNEUS) ---
+const SUPABASE_URL = 'https://ggtzcxcjgzueuakoflzm.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdndHpjeGNqZ3p1ZXVha29mbHptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5OTI2OTEsImV4cCI6MjEwNzU2ODY5MX0.qzI9s6ikeV5boyphayEHOULAwcXUy4FIwn7driJ_KfI';
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // Estado Global do Sistema
 const LEGACY_STORAGE_KEY = 'llk-system-state-v3';
 let STORAGE_KEY = 'llk-system-state-v4:pending';
