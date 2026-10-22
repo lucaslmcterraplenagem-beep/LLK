@@ -1,3 +1,19 @@
+function switchCadastroSubTab(subTabId) {
+    document.querySelectorAll('.subtab-content').forEach(el => el.classList.add('hidden'));
+    const target = document.getElementById('subtab-' + subTabId);
+    if (target) target.classList.remove('hidden');
+
+    document.querySelectorAll('.subnav-btn').forEach(btn => {
+        btn.classList.remove('border-emerald-500', 'text-emerald-600', 'font-semibold');
+        btn.classList.add('border-transparent', 'text-slate-500');
+    });
+
+    const activeBtn = document.getElementById('subnav-' + subTabId);
+    if (activeBtn) {
+        activeBtn.classList.remove('border-transparent', 'text-slate-500');
+        activeBtn.classList.add('border-emerald-500', 'text-emerald-600', 'font-semibold');
+    }
+}
 // Módulo de Cadastros Gerais (Veículos, Motoristas e Fornecedores)
 function renderVeiculos() {
     const container = document.getElementById('table-veiculos');
