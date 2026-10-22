@@ -1,20 +1,31 @@
+let currentAuthUser = null;
+let ALLOW_PUBLIC_REGISTRATION = false; // Mude para true se quiser permitir cadastro aberto
 
 async function enterAuthenticatedApp(user) {
     currentAuthUser = user;
     currentUser = user.email;
-    
+
     // Esconde a tela de login e mostra o painel principal
     document.getElementById('auth-screen').classList.add('hidden');
     document.getElementById('app-content').style.display = 'flex';
-    
+
     // Atualiza o e-mail do usuário logado no menu lateral
     const userLabel = document.getElementById('logged-user-label');
     if (userLabel) userLabel.textContent = user.email;
-    
-    setAuthMessage('Login efetuado com sucesso!', 'success');
+
+    try {
+        await loadCloudStateForUser(user);
+        if (typeof refreshAllViews === 'function') refreshAllViews();
+        setAuthMessage('Login efetuado com sucesso!', 'success');
+    } catch (err) {
+        console.error(err);
+        if (typeof setCloudSyncStatus === 'function') {
+            setCloudSyncStatus('error', 'Logado, mas falhou ao carregar dados: ' + (err.message || err));
+        }
+        setAuthMessage('Conta autenticada, porém houve erro ao carregar os dados da nuvem.', 'error');
+        if (typeof refreshAllViews === 'function') refreshAllViews();
+    }
 }
-let currentAuthUser = null;
-let ALLOW_PUBLIC_REGISTRATION = false; // Mude para true se quiser permitir cadastro aberto
 
 function setAuthMessage(message, kind = 'info') {
     const el = document.getElementById('auth-message');
@@ -41,15 +52,15 @@ async function handleAuth(event) {
     const email = document.getElementById('auth-email').value.trim().toLowerCase();
     const password = document.getElementById('auth-password').value;
     const button = document.getElementById('auth-sign-in');
-    
+
     button.disabled = true;
     button.textContent = 'Autenticando...';
-    
+
     try {
         const { data, error } = await sb.auth.signInWithPassword({ email, password });
         if (error) throw error;
         if (!data?.user) throw new Error('Não foi possível autenticar o usuário.');
-        
+
         await enterAuthenticatedApp(data.user);
     } catch (error) {
         setAuthMessage(explainAuthOrDatabaseError(error), 'error');
@@ -64,10 +75,10 @@ async function createAuthAccount() {
         setAuthMessage('O cadastro público está desativado. Entre em contato com o suporte/administrador para contratar e liberar sua conta.', 'error');
         return;
     }
-    
+
     const email = document.getElementById('auth-email').value.trim().toLowerCase();
     const password = document.getElementById('auth-password').value;
-    
+
     if (!email || !password || password.length < 8) {
         setAuthMessage('Informe o e-mail e uma senha de pelo menos 8 caracteres.', 'error');
         return;
@@ -76,7 +87,7 @@ async function createAuthAccount() {
     const button = document.getElementById('auth-sign-up');
     button.disabled = true;
     button.textContent = 'Solicitando acesso...';
-    
+
     try {
         const { data, error } = await sb.auth.signUp({ email, password });
         if (error) throw error;
@@ -96,15 +107,22 @@ async function signOutUser() {
     }
     if (currentAuthUser && cloudReady) {
         while (cloudSaveInFlight) await new Promise(resolve => setTimeout(resolve, 50));
-        await persistCloudState(JSON.stringify(state));
+        try {
+            await persistCloudState(JSON.stringify(state));
+        } catch (err) {
+            console.warn('Não foi possível salvar antes de sair:', err);
+        }
     }
     await sb.auth.signOut();
     cloudReady = false;
     currentAuthUser = null;
     currentUser = 'Admin LK Pneus';
-    
+
     document.getElementById('app-content').style.display = 'none';
     document.getElementById('auth-screen').classList.remove('hidden');
     document.getElementById('auth-password').value = '';
     setAuthMessage('Você saiu da conta com segurança.', 'success');
+    if (typeof setCloudSyncStatus === 'function') {
+        setCloudSyncStatus('error', 'Desconectado do Supabase.');
+    }
 }
