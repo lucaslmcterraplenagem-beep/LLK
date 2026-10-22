@@ -1,3 +1,18 @@
+
+async function enterAuthenticatedApp(user) {
+    currentAuthUser = user;
+    currentUser = user.email;
+    
+    // Esconde a tela de login e mostra o painel principal
+    document.getElementById('auth-screen').classList.add('hidden');
+    document.getElementById('app-content').style.display = 'flex';
+    
+    // Atualiza o e-mail do usuário logado no menu lateral
+    const userLabel = document.getElementById('logged-user-label');
+    if (userLabel) userLabel.textContent = user.email;
+    
+    setAuthMessage('Login efetuado com sucesso!', 'success');
+}
 let currentAuthUser = null;
 let ALLOW_PUBLIC_REGISTRATION = false; // Mude para true se quiser permitir cadastro aberto
 
