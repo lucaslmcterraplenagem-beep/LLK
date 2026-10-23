@@ -1,28 +1,20 @@
-let currentAuthUser = null;
-let ALLOW_PUBLIC_REGISTRATION = false; // Mude para true se quiser permitir cadastro aberto
+let ALLOW_PUBLIC_REGISTRATION = false; // true = permite cadastro aberto pelo formulário
 
 async function enterAuthenticatedApp(user) {
     currentAuthUser = user;
     currentUser = user.email;
-
-    // Esconde a tela de login e mostra o painel principal
     document.getElementById('auth-screen').classList.add('hidden');
     document.getElementById('app-content').style.display = 'flex';
-
-    // Atualiza o e-mail do usuário logado no menu lateral
     const userLabel = document.getElementById('logged-user-label');
     if (userLabel) userLabel.textContent = user.email;
-
     try {
-        await loadCloudStateForUser(user);
+        await loadAllTables();
         if (typeof refreshAllViews === 'function') refreshAllViews();
         setAuthMessage('Login efetuado com sucesso!', 'success');
     } catch (err) {
         console.error(err);
-        if (typeof setCloudSyncStatus === 'function') {
-            setCloudSyncStatus('error', 'Logado, mas falhou ao carregar dados: ' + (err.message || err));
-        }
-        setAuthMessage('Conta autenticada, porém houve erro ao carregar os dados da nuvem.', 'error');
+        setCloudSyncStatus('error', 'Logado, mas falhou ao carregar dados: ' + (err.message || err));
+        setAuthMessage('Conta autenticada, porém houve erro ao carregar os dados da nuvem. Execute o supabase-setup.sql se ainda não rodou.', 'error');
         if (typeof refreshAllViews === 'function') refreshAllViews();
     }
 }
@@ -41,9 +33,10 @@ function setAuthMessage(message, kind = 'info') {
 
 function explainAuthOrDatabaseError(error) {
     const msg = String(error?.message || error || 'Erro inesperado.');
-    if (/Invalid login credentials/i.test(msg)) return 'E-mail ou senha incorretos. Confira os dados ou contate o administrador.';
-    if (/Email not confirmed/i.test(msg)) return 'Confirme seu e-mail pelo link enviado para ativar a conta.';
-    if (/User already registered/i.test(msg)) return 'Esta conta já existe. Solicite o acesso ao administrador.';
+    if (/Invalid login credentials/i.test(msg)) return 'E-mail ou senha incorretos.';
+    if (/Email not confirmed/i.test(msg)) return 'Confirme seu e-mail pelo link enviado.';
+    if (/User already registered/i.test(msg)) return 'Esta conta já existe.';
+    if (/relation .* does not exist/i.test(msg)) return 'Tabelas ainda não criadas. Execute o arquivo supabase-setup.sql no SQL Editor do Supabase.';
     return msg;
 }
 
@@ -52,15 +45,12 @@ async function handleAuth(event) {
     const email = document.getElementById('auth-email').value.trim().toLowerCase();
     const password = document.getElementById('auth-password').value;
     const button = document.getElementById('auth-sign-in');
-
     button.disabled = true;
     button.textContent = 'Autenticando...';
-
     try {
         const { data, error } = await sb.auth.signInWithPassword({ email, password });
         if (error) throw error;
         if (!data?.user) throw new Error('Não foi possível autenticar o usuário.');
-
         await enterAuthenticatedApp(data.user);
     } catch (error) {
         setAuthMessage(explainAuthOrDatabaseError(error), 'error');
@@ -72,26 +62,22 @@ async function handleAuth(event) {
 
 async function createAuthAccount() {
     if (!ALLOW_PUBLIC_REGISTRATION) {
-        setAuthMessage('O cadastro público está desativado. Entre em contato com o suporte/administrador para contratar e liberar sua conta.', 'error');
+        setAuthMessage('O cadastro público está desativado. Contate o administrador.', 'error');
         return;
     }
-
     const email = document.getElementById('auth-email').value.trim().toLowerCase();
     const password = document.getElementById('auth-password').value;
-
     if (!email || !password || password.length < 8) {
         setAuthMessage('Informe o e-mail e uma senha de pelo menos 8 caracteres.', 'error');
         return;
     }
-
     const button = document.getElementById('auth-sign-up');
     button.disabled = true;
     button.textContent = 'Solicitando acesso...';
-
     try {
-        const { data, error } = await sb.auth.signUp({ email, password });
+        const { error } = await sb.auth.signUp({ email, password });
         if (error) throw error;
-        setAuthMessage('Cadastro enviado! Aguarde a liberação do seu plano para acessar.', 'success');
+        setAuthMessage('Cadastro enviado! Aguarde liberação.', 'success');
     } catch (error) {
         setAuthMessage(explainAuthOrDatabaseError(error), 'error');
     } finally {
@@ -101,28 +87,14 @@ async function createAuthAccount() {
 }
 
 async function signOutUser() {
-    if (cloudSaveTimer) {
-        clearTimeout(cloudSaveTimer);
-        cloudSaveTimer = null;
-    }
-    if (currentAuthUser && cloudReady) {
-        while (cloudSaveInFlight) await new Promise(resolve => setTimeout(resolve, 50));
-        try {
-            await persistCloudState(JSON.stringify(state));
-        } catch (err) {
-            console.warn('Não foi possível salvar antes de sair:', err);
-        }
-    }
     await sb.auth.signOut();
     cloudReady = false;
     currentAuthUser = null;
     currentUser = 'Admin LK Pneus';
-
+    state = { pneus: [], veiculos: [], motoristas: [], fornecedores: [], ordens: [], auditoria: [], osCounter: 1001 };
     document.getElementById('app-content').style.display = 'none';
     document.getElementById('auth-screen').classList.remove('hidden');
     document.getElementById('auth-password').value = '';
     setAuthMessage('Você saiu da conta com segurança.', 'success');
-    if (typeof setCloudSyncStatus === 'function') {
-        setCloudSyncStatus('error', 'Desconectado do Supabase.');
-    }
+    setCloudSyncStatus('error', 'Desconectado do Supabase.');
 }
