@@ -3,23 +3,21 @@ const SUPABASE_URL = 'https://ggtzcxcjgzueuakoflzm.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdndHpjeGNqZ3p1ZXVha29mbHptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5OTI2OTEsImV4cCI6MjEwNzU2ODY5MX0.qzI9s6ikeV5boyphayEHOULAwcXUy4FIwn7driJ_KfI';
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-// Alias para outros arquivos que usam window.supabaseClient
 window.supabaseClient = sb;
 
-// Estado Global do Sistema
-const LEGACY_STORAGE_KEY = 'llk-system-state-v3';
-let STORAGE_KEY = 'llk-system-state-v4:pending';
-
+// Estado em memória (espelho das tabelas para a UI)
 let state = {
-    pneus: [], veiculos: [], motoristas: [], fornecedores: [],
-    usuarios: [{ id: 1, nome: 'Admin LK Pneus', email: 'admin@llk.com', perfil: 'Administrador', status: 'Ativo', conviteEnviado: false }],
-    ordens: [], auditoria: [], movimentacoes: [], osCounter: 1001
+    pneus: [],
+    veiculos: [],
+    motoristas: [],
+    fornecedores: [],
+    ordens: [],
+    auditoria: [],
+    osCounter: 1001
 };
 
 let cloudReady = false;
-let cloudSaveTimer = null;
-let cloudSaveInFlight = false;
-let pendingCloudSnapshot = null;
+let currentAuthUser = null;
 let currentUser = 'Admin LK Pneus';
 const chartInstances = {};
 
@@ -28,131 +26,71 @@ function setCloudSyncStatus(kind, message) {
     const dot = document.getElementById('cloud-sync-dot');
     const icon = document.getElementById('cloud-sync-icon');
     if (!label) return;
-
     label.textContent = message;
-
     if (dot) {
         dot.className = 'h-2 w-2 rounded-full ' + (
             kind === 'ok' ? 'bg-emerald-500' :
             kind === 'error' ? 'bg-red-500' :
-            kind === 'saving' ? 'bg-amber-400' :
-            'bg-slate-400'
+            kind === 'saving' ? 'bg-amber-400' : 'bg-slate-400'
         );
     }
     if (icon) {
         icon.className = 'fa-solid ' + (
             kind === 'ok' ? 'fa-cloud' :
             kind === 'error' ? 'fa-cloud-bolt' :
-            kind === 'saving' ? 'fa-cloud-arrow-up' :
-            'fa-cloud'
+            kind === 'saving' ? 'fa-cloud-arrow-up' : 'fa-cloud'
         );
     }
 }
 
-function loadState() {
-    let saved = null;
-    try {
-        saved = localStorage.getItem(STORAGE_KEY);
-    } catch (err) {
-        console.warn('Não foi possível ler o armazenamento local.', err);
-    }
-    if (saved) {
-        try { state = { ...state, ...JSON.parse(saved) }; }
-        catch (err) { console.warn('Estado salvo corrompido, iniciando limpo.', err); }
-    }
-    ['pneus','veiculos','motoristas','fornecedores','usuarios','ordens','auditoria','movimentacoes'].forEach(k => {
-        if (!Array.isArray(state[k])) state[k] = [];
-    });
-}
-
-function saveState() {
-    const serialized = JSON.stringify(state);
-    queueCloudSave(serialized);
-    try {
-        localStorage.setItem(STORAGE_KEY, serialized);
-        return true;
-    } catch (err) {
-        console.warn('Falha ao salvar no armazenamento local.', err);
-        return false;
-    }
-}
-
-function queueCloudSave(serialized) {
-    if (!cloudReady || !currentAuthUser) return;
-    pendingCloudSnapshot = serialized;
-    if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
-    cloudSaveTimer = setTimeout(() => {
-        cloudSaveTimer = null;
-        flushCloudSave();
-    }, 600);
-}
-
-async function flushCloudSave() {
-    if (!cloudReady || !currentAuthUser || cloudSaveInFlight) return;
-    if (pendingCloudSnapshot == null) return;
-
-    const snapshot = pendingCloudSnapshot;
-    pendingCloudSnapshot = null;
-    cloudSaveInFlight = true;
-    setCloudSyncStatus('saving', 'Salvando no Supabase...');
-
-    try {
-        await persistCloudState(snapshot);
-        setCloudSyncStatus('ok', 'Conectado ao Supabase · dados sincronizados');
-    } catch (err) {
-        console.error('Erro ao salvar na nuvem:', err);
-        setCloudSyncStatus('error', 'Erro ao salvar no Supabase: ' + (err.message || err));
-        pendingCloudSnapshot = snapshot;
-    } finally {
-        cloudSaveInFlight = false;
-        if (pendingCloudSnapshot != null) queueCloudSave(pendingCloudSnapshot);
-    }
-}
-
-async function persistCloudState(serialized) {
-    const parsed = JSON.parse(serialized);
-    const userId = currentAuthUser.id;
-
-    const { error } = await sb
-        .from('lk_pneus_state')
-        .upsert({
-            user_id: userId,
-            state: parsed,
-            updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id' });
-
-    if (error) throw error;
-}
-
-async function loadCloudStateForUser(user) {
+/** Carrega TODAS as tabelas do usuário autenticado (fonte da verdade = Supabase) */
+async function loadAllTables() {
+    if (!currentAuthUser) return;
     setCloudSyncStatus('saving', 'Carregando dados do Supabase...');
+    const uid = currentAuthUser.id;
 
-    STORAGE_KEY = 'llk-system-state-v4:' + user.id;
+    const [veiculosRes, pneusRes, motoristasRes, fornecedoresRes, ordensRes, auditRes] = await Promise.all([
+        sb.from('veiculos').select('*').eq('owner_id', uid).order('created_at', { ascending: false }),
+        sb.from('pneus').select('*').eq('owner_id', uid).order('created_at', { ascending: false }),
+        sb.from('motoristas').select('*').eq('owner_id', uid).order('created_at', { ascending: false }),
+        sb.from('fornecedores').select('*').eq('owner_id', uid).order('created_at', { ascending: false }),
+        sb.from('ordens_servico').select('*').eq('owner_id', uid).order('data', { ascending: false }),
+        sb.from('auditoria').select('*').eq('owner_id', uid).order('data_hora', { ascending: false }).limit(500)
+    ]);
 
-    const { data, error } = await sb
-        .from('lk_pneus_state')
-        .select('state')
-        .eq('user_id', user.id)
-        .maybeSingle();
+    const fail = [veiculosRes, pneusRes, motoristasRes, fornecedoresRes, ordensRes, auditRes].find(r => r.error);
+    if (fail) throw fail.error;
 
-    if (error) throw error;
+    // Normaliza nomes para compatibilidade com o HTML antigo
+    state.veiculos = (veiculosRes.data || []).map(v => ({ ...v, totalPneus: v.total_pneus }));
+    state.pneus = (pneusRes.data || []).map(p => ({
+        ...p,
+        sulcoAtual: p.sulco_atual,
+        sulco: p.sulco_atual,
+        veiculoId: p.veiculo_id,
+        numero: p.fogo
+    }));
+    state.motoristas = motoristasRes.data || [];
+    state.fornecedores = fornecedoresRes.data || [];
+    state.ordens = (ordensRes.data || []).map(o => ({
+        ...o,
+        veiculo: o.veiculo_placa || o.veiculo,
+        veiculoId: o.veiculo_id
+    }));
+    state.auditoria = (auditRes.data || []).map(a => ({
+        ...a,
+        dataHora: a.data_hora,
+        time: a.data_hora
+    }));
 
-    if (data && data.state && typeof data.state === 'object') {
-        state = { ...state, ...data.state };
-        ['pneus','veiculos','motoristas','fornecedores','usuarios','ordens','auditoria','movimentacoes'].forEach(k => {
-            if (!Array.isArray(state[k])) state[k] = [];
-        });
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        } catch (e) { /* ignore */ }
-    } else {
-        // Primeira vez: sobe o estado local atual para a nuvem
-        loadState();
-        await persistCloudState(JSON.stringify(state));
-    }
+    const maxNum = state.ordens.reduce((m, o) => {
+        const n = parseInt(String(o.numero || '').replace(/\D/g, ''), 10);
+        return isNaN(n) ? m : Math.max(m, n);
+    }, 1000);
+    state.osCounter = maxNum + 1;
 
     cloudReady = true;
-    setCloudSyncStatus('ok', 'Conectado ao Supabase · conta ' + (user.email || ''));
+    setCloudSyncStatus('ok', 'Conectado ao Supabase · conta ' + (currentAuthUser.email || ''));
 }
 
 function refreshAllViews() {
@@ -165,18 +103,18 @@ function refreshAllViews() {
     if (typeof renderFornecedores === 'function') renderFornecedores();
     if (typeof renderUsuarios === 'function') renderUsuarios();
     if (typeof renderAuditoria === 'function') renderAuditoria();
+    if (typeof populateMapaVeiculoSelect === 'function') populateMapaVeiculoSelect();
+    if (typeof renderVehicleMap === 'function') renderVehicleMap();
 }
 
 async function bootstrapAuthAndCloud() {
     setCloudSyncStatus('saving', 'Conectando ao Supabase...');
-
     const { data: { session }, error } = await sb.auth.getSession();
     if (error) {
         console.error(error);
         setCloudSyncStatus('error', 'Erro de autenticação: ' + error.message);
         return;
     }
-
     if (session && session.user) {
         await enterAuthenticatedApp(session.user);
     } else {
@@ -185,7 +123,6 @@ async function bootstrapAuthAndCloud() {
         const app = document.getElementById('app-content');
         if (app) app.style.display = 'none';
     }
-
     sb.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_OUT') {
             cloudReady = false;
@@ -200,9 +137,7 @@ async function bootstrapAuthAndCloud() {
     });
 }
 
-// Inicia quando a página carregar
 document.addEventListener('DOMContentLoaded', () => {
-    loadState();
     bootstrapAuthAndCloud().catch(err => {
         console.error(err);
         setCloudSyncStatus('error', 'Falha ao conectar: ' + (err.message || err));
