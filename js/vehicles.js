@@ -1,4 +1,4 @@
-// Módulo de Veículos e Mapa de Pneus — usa state + saveState (Supabase via lk_pneus_state)
+// Módulo de Veículos e Mapa de Pneus – CRUD 100% Supabase (veiculos + pneus)
 
 const VEHICLE_PRESETS = {
     'truck-6x2': [
@@ -178,7 +178,6 @@ function openNewVeiculoModal() {
     openModal('modal-veiculo');
 }
 
-// Sobrescreve o botão "Novo Veículo" se ele só chama openModal
 document.addEventListener('click', function (e) {
     const btn = e.target.closest('button');
     if (!btn) return;
@@ -188,8 +187,9 @@ document.addEventListener('click', function (e) {
     }
 });
 
-function handleSaveVeiculo(event) {
+async function handleSaveVeiculo(event) {
     event.preventDefault();
+    if (!currentAuthUser) { alert('Faça login primeiro.'); return; }
 
     const editId = (document.getElementById('veiculo-edit-id')?.value || '').trim();
     const prefixo = (document.getElementById('veiculo-prefixo')?.value || '').trim();
@@ -212,47 +212,45 @@ function handleSaveVeiculo(event) {
     }
 
     const eixos = cloneAxles(editingAxles);
+    const totalPneus = countMountedTires(eixos) + estepe;
+
     const payload = {
-        prefixo,
-        placa,
-        ano,
-        modelo,
-        categoria,
-        config,
-        km,
-        chassi,
-        estepe,
-        eixos,
-        totalPneus: countMountedTires(eixos) + estepe
+        prefixo, placa, ano, modelo, categoria, config, km, chassi, estepe,
+        eixos, total_pneus: totalPneus, updated_at: new Date().toISOString()
     };
 
-    if (editId) {
-        const idx = state.veiculos.findIndex(v => String(v.id) === String(editId));
-        if (idx === -1) {
-            alert('Veículo não encontrado para edição.');
-            return;
+    try {
+        setCloudSyncStatus('saving', 'Salvando veículo no Supabase...');
+        if (editId) {
+            const { data, error } = await sb.from('veiculos').update(payload)
+                .eq('id', editId).eq('owner_id', currentAuthUser.id).select().single();
+            if (error) throw error;
+            const idx = state.veiculos.findIndex(v => String(v.id) === String(editId));
+            if (idx >= 0) state.veiculos[idx] = { ...state.veiculos[idx], ...data, totalPneus: data.total_pneus };
+            await logAudit('Veículos', 'Atualizar', `Veículo ${placa} atualizado`);
+        } else {
+            const { data, error } = await sb.from('veiculos').insert({
+                owner_id: currentAuthUser.id, ...payload
+            }).select().single();
+            if (error) throw error;
+            state.veiculos.unshift({ ...data, totalPneus: data.total_pneus });
+            await logAudit('Veículos', 'Criar', `Veículo ${placa} cadastrado`);
         }
-        state.veiculos[idx] = { ...state.veiculos[idx], ...payload, id: state.veiculos[idx].id };
-    } else {
-        const id = 'v_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-        state.veiculos.push({ id, ...payload });
+        setCloudSyncStatus('ok', 'Veículo sincronizado no Supabase');
+        refreshVehicleUI();
+        closeModal('modal-veiculo');
+        resetVeiculoForm();
+        alert(editId ? 'Veículo atualizado e sincronizado.' : 'Veículo cadastrado e sincronizado com o Supabase.');
+    } catch (err) {
+        console.error(err);
+        setCloudSyncStatus('error', 'Erro ao salvar veículo: ' + (err.message || err));
+        alert('Erro ao salvar veículo: ' + (err.message || err));
     }
-
-    if (!Array.isArray(state.veiculos)) state.veiculos = [];
-
-    saveState();
-    refreshVehicleUI();
-    closeModal('modal-veiculo');
-    resetVeiculoForm();
-    alert(editId ? 'Veículo atualizado e sincronizado.' : 'Veículo cadastrado e sincronizado com o Supabase.');
 }
 
 function editVeiculo(id) {
     const v = state.veiculos.find(item => String(item.id) === String(id));
-    if (!v) {
-        alert('Veículo não encontrado.');
-        return;
-    }
+    if (!v) { alert('Veículo não encontrado.'); return; }
 
     document.getElementById('veiculo-edit-id').value = v.id;
     document.getElementById('veiculo-prefixo').value = v.prefixo || '';
@@ -278,27 +276,36 @@ function editVeiculo(id) {
     openModal('modal-veiculo');
 }
 
-function deleteVeiculo(id) {
+async function deleteVeiculo(id) {
     if (!confirm('Deseja realmente excluir este veículo?')) return;
+    if (!currentAuthUser) return;
 
-    state.veiculos = state.veiculos.filter(v => String(v.id) !== String(id));
+    try {
+        setCloudSyncStatus('saving', 'Excluindo veículo no Supabase...');
+        // Libera pneus alocados neste veículo
+        await sb.from('pneus').update({
+            veiculo_id: null, posicao: null, status: 'Estoque', updated_at: new Date().toISOString()
+        }).eq('veiculo_id', id).eq('owner_id', currentAuthUser.id);
 
-    // Libera pneus que estavam nesse veículo
-    state.pneus = (state.pneus || []).map(p => {
-        if (String(p.veiculoId) === String(id)) {
-            return {
-                ...p,
-                veiculoId: null,
-                veiculo: 'Estoque',
-                posicao: null,
-                status: p.status === 'Em Uso' ? 'Estoque' : (p.status || 'Estoque')
-            };
-        }
-        return p;
-    });
+        const { error } = await sb.from('veiculos').delete().eq('id', id).eq('owner_id', currentAuthUser.id);
+        if (error) throw error;
 
-    saveState();
-    refreshVehicleUI();
+        state.veiculos = state.veiculos.filter(v => String(v.id) !== String(id));
+        state.pneus = (state.pneus || []).map(p => {
+            if (String(p.veiculo_id || p.veiculoId) === String(id)) {
+                return { ...p, veiculo_id: null, veiculoId: null, posicao: null, status: 'Estoque' };
+            }
+            return p;
+        });
+
+        await logAudit('Veículos', 'Excluir', `Veículo ${id} excluído (pneus liberados)`);
+        setCloudSyncStatus('ok', 'Veículo excluído no Supabase');
+        refreshVehicleUI();
+    } catch (err) {
+        console.error(err);
+        setCloudSyncStatus('error', 'Erro: ' + (err.message || err));
+        alert('Erro ao excluir veículo: ' + (err.message || err));
+    }
 }
 
 function refreshVehicleUI() {
@@ -326,7 +333,8 @@ function populateMapaVeiculoSelect() {
 
 function getTireAtSlot(veiculoId, slotKey) {
     return (state.pneus || []).find(p =>
-        String(p.veiculoId) === String(veiculoId) && String(p.posicao || p.slot || '') === String(slotKey)
+        String(p.veiculo_id || p.veiculoId) === String(veiculoId) &&
+        String(p.posicao || p.slot || '') === String(slotKey)
     );
 }
 
@@ -372,33 +380,29 @@ function renderVehicleMap() {
         return;
     }
 
+    const renderSlot = (slotKey) => {
+        const tire = getTireAtSlot(v.id, slotKey);
+        if (!tire) {
+            return `<button type="button" class="map-wheel is-empty" onclick="openAssignTireModal('${escapeHtml(String(v.id))}','${escapeHtml(slotKey)}')">
+                <span class="wheel-icon"><i class="fa-regular fa-circle"></i></span>
+                <span class="text-[10px] font-semibold">${escapeHtml(slotKey)}</span>
+                <span class="block text-[10px] text-slate-400">Livre</span>
+            </button>`;
+        }
+        const sulco = tire.sulco_atual != null ? tire.sulco_atual : (tire.sulcoAtual != null ? tire.sulcoAtual : tire.sulco);
+        const cls = sulcoClass(sulco);
+        return `<button type="button" class="map-wheel ${cls}" onclick="openAssignTireModal('${escapeHtml(String(v.id))}','${escapeHtml(slotKey)}')">
+            <span class="wheel-icon"><i class="fa-solid fa-circle-dot"></i></span>
+            <span class="text-[10px] font-bold">${escapeHtml(tire.fogo || tire.numero || slotKey)}</span>
+            <span class="block text-[10px]">${sulco != null ? sulco + ' mm' : '-'}</span>
+        </button>`;
+    };
+
     eixos.forEach((eixo, eixoIdx) => {
         const leftSlots = [];
         const rightSlots = [];
-        for (let i = 1; i <= (Number(eixo.esq) || 0); i++) {
-            leftSlots.push(`L${eixoIdx + 1}-${i}`);
-        }
-        for (let i = 1; i <= (Number(eixo.dir) || 0); i++) {
-            rightSlots.push(`R${eixoIdx + 1}-${i}`);
-        }
-
-        const renderSlot = (slotKey) => {
-            const tire = getTireAtSlot(v.id, slotKey);
-            if (!tire) {
-                return `<button type="button" class="map-wheel is-empty" onclick="openAssignTireModal('${escapeHtml(String(v.id))}','${escapeHtml(slotKey)}')">
-                    <span class="wheel-icon"><i class="fa-regular fa-circle"></i></span>
-                    <span class="text-[10px] font-semibold">${escapeHtml(slotKey)}</span>
-                    <span class="block text-[10px] text-slate-400">Livre</span>
-                </button>`;
-            }
-            const sulco = tire.sulcoAtual != null ? tire.sulcoAtual : tire.sulco;
-            const cls = sulcoClass(sulco);
-            return `<button type="button" class="map-wheel ${cls}" onclick="openAssignTireModal('${escapeHtml(String(v.id))}','${escapeHtml(slotKey)}')">
-                <span class="wheel-icon"><i class="fa-solid fa-circle-dot"></i></span>
-                <span class="text-[10px] font-bold">${escapeHtml(tire.fogo || tire.numero || slotKey)}</span>
-                <span class="block text-[10px]">${sulco != null ? sulco + ' mm' : '-'}</span>
-            </button>`;
-        };
+        for (let i = 1; i <= (Number(eixo.esq) || 0); i++) leftSlots.push(`L${eixoIdx + 1}-${i}`);
+        for (let i = 1; i <= (Number(eixo.dir) || 0); i++) rightSlots.push(`R${eixoIdx + 1}-${i}`);
 
         html += `
             <div class="map-axle-row mb-3">
@@ -415,30 +419,11 @@ function renderVehicleMap() {
     const spareCount = Number(v.estepe) || 0;
     if (spareCount > 0) {
         html += '<div class="mt-4 border-t border-slate-100 pt-3"><p class="text-xs font-semibold text-slate-600 mb-2">Estepes</p><div class="flex flex-wrap gap-2">';
-        for (let s = 1; s <= spareCount; s++) {
-            html += renderSlotFn(v.id, 'EST-' + s);
-        }
+        for (let s = 1; s <= spareCount; s++) html += renderSlot('EST-' + s);
         html += '</div></div>';
     }
 
     container.innerHTML = html;
-
-    function renderSlotFn(veiculoId, slotKey) {
-        const tire = getTireAtSlot(veiculoId, slotKey);
-        if (!tire) {
-            return `<button type="button" class="map-wheel is-empty" onclick="openAssignTireModal('${escapeHtml(String(veiculoId))}','${escapeHtml(slotKey)}')">
-                <span class="wheel-icon"><i class="fa-regular fa-circle"></i></span>
-                <span class="text-[10px] font-semibold">${escapeHtml(slotKey)}</span>
-                <span class="block text-[10px] text-slate-400">Livre</span>
-            </button>`;
-        }
-        const sulco = tire.sulcoAtual != null ? tire.sulcoAtual : tire.sulco;
-        return `<button type="button" class="map-wheel ${sulcoClass(sulco)}" onclick="openAssignTireModal('${escapeHtml(String(veiculoId))}','${escapeHtml(slotKey)}')">
-            <span class="wheel-icon"><i class="fa-solid fa-circle-dot"></i></span>
-            <span class="text-[10px] font-bold">${escapeHtml(tire.fogo || tire.numero || slotKey)}</span>
-            <span class="block text-[10px]">${sulco != null ? sulco + ' mm' : '-'}</span>
-        </button>`;
-    }
 }
 
 function openAssignTireModal(veiculoId, slotKey) {
@@ -456,8 +441,10 @@ function openAssignTireModal(veiculoId, slotKey) {
     const current = getTireAtSlot(veiculoId, slotKey);
     const disponiveis = (state.pneus || []).filter(p => {
         if (current && String(p.id) === String(current.id)) return true;
-        const livre = !p.veiculoId || p.veiculo === 'Estoque' || p.status === 'Estoque' || p.status === 'Stock';
-        return livre || String(p.veiculoId) === String(veiculoId);
+        const livre = (!p.veiculo_id && !p.veiculoId) ||
+            (p.status || '').toLowerCase() === 'estoque' ||
+            (p.status || '').toLowerCase() === 'stock';
+        return livre || String(p.veiculo_id || p.veiculoId) === String(veiculoId);
     });
 
     select.innerHTML = '<option value="">Deixar posição vazia</option>' + disponiveis.map(p => {
@@ -469,67 +456,65 @@ function openAssignTireModal(veiculoId, slotKey) {
     openModal('modal-alocar-pneu');
 }
 
-function handleAssignTire(event) {
+async function handleAssignTire(event) {
     event.preventDefault();
+    if (!currentAuthUser) return;
+
     const veiculoId = document.getElementById('alocar-veiculo-id').value;
     const slotKey = document.getElementById('alocar-slot-key').value;
     const pneuId = document.getElementById('alocar-pneu-select').value;
-    const v = state.veiculos.find(item => String(item.id) === String(veiculoId));
-    if (!v) return;
 
-    // Remove quem estava neste slot
-    state.pneus = (state.pneus || []).map(p => {
-        if (String(p.veiculoId) === String(veiculoId) && String(p.posicao || p.slot || '') === String(slotKey)) {
-            return {
-                ...p,
-                veiculoId: null,
-                veiculo: 'Estoque',
-                posicao: null,
-                slot: null,
-                status: 'Estoque'
-            };
+    try {
+        setCloudSyncStatus('saving', 'Alocando pneu no Supabase...');
+
+        // Libera quem estava nesta posição
+        const atual = getTireAtSlot(veiculoId, slotKey);
+        if (atual) {
+            await sb.from('pneus').update({
+                veiculo_id: null, posicao: null, status: 'Estoque', updated_at: new Date().toISOString()
+            }).eq('id', atual.id).eq('owner_id', currentAuthUser.id);
+            const idx = state.pneus.findIndex(p => p.id === atual.id);
+            if (idx >= 0) {
+                state.pneus[idx] = { ...state.pneus[idx], veiculo_id: null, veiculoId: null, posicao: null, status: 'Estoque' };
+            }
         }
-        return p;
-    });
 
-    if (pneuId) {
-        state.pneus = state.pneus.map(p => {
-            if (String(p.id) !== String(pneuId)) return p;
-            // Se estava em outro slot, libera
-            return {
-                ...p,
-                veiculoId: veiculoId,
-                veiculo: v.placa || v.modelo || veiculoId,
+        if (pneuId) {
+            const { data, error } = await sb.from('pneus').update({
+                veiculo_id: veiculoId,
                 posicao: slotKey,
-                slot: slotKey,
-                status: 'Em Uso'
-            };
-        });
-    }
+                status: 'Em Uso',
+                updated_at: new Date().toISOString()
+            }).eq('id', pneuId).eq('owner_id', currentAuthUser.id).select().single();
+            if (error) throw error;
 
-    saveState();
-    closeModal('modal-alocar-pneu');
-    refreshVehicleUI();
-    if (typeof renderTireList === 'function') renderTireList();
+            const idx = state.pneus.findIndex(p => p.id === pneuId);
+            if (idx >= 0) {
+                state.pneus[idx] = {
+                    ...state.pneus[idx],
+                    ...data,
+                    veiculoId: data.veiculo_id,
+                    sulcoAtual: data.sulco_atual,
+                    sulco: data.sulco_atual
+                };
+            }
+            await logAudit('Pneus', 'Alocar', `Pneu ${data.fogo} → veículo ${veiculoId} posição ${slotKey}`);
+        } else {
+            await logAudit('Pneus', 'Desalocar', `Posição ${slotKey} do veículo ${veiculoId} liberada`);
+        }
+
+        setCloudSyncStatus('ok', 'Alocação sincronizada no Supabase');
+        closeModal('modal-alocar-pneu');
+        renderVehicleMap();
+        if (typeof renderTireList === 'function') renderTireList();
+        if (typeof updateDashboardMetrics === 'function') updateDashboardMetrics();
+    } catch (err) {
+        console.error(err);
+        setCloudSyncStatus('error', 'Erro na alocação: ' + (err.message || err));
+        alert('Erro ao alocar pneu: ' + (err.message || err));
+    }
 }
 
-// Alias usado em alguns pontos antigos
 function renderVehicleList() {
     if (typeof renderVeiculos === 'function') renderVeiculos();
-}
-
-function loadVeiculosFromSupabase() {
-    // Dados vêm do JSON em lk_pneus_state (loadCloudStateForUser).
-    refreshVehicleUI();
-}
-
-// Ao carregar o script, prepara preset padrão do modal
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        if (document.getElementById('vehicle-axle-editor')) applyVehiclePreset();
-        populateMapaVeiculoSelect();
-    });
-} else {
-    if (document.getElementById('vehicle-axle-editor')) applyVehiclePreset();
-    populateMapaVeiculoSelect();
 }
